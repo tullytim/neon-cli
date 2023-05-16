@@ -1,5 +1,3 @@
-// https://github.com/sfackler/rust-postgres/issues/858
-
 use chrono::Utc;
 
 /// The postgres-crate does not provide a default mapping to fallback to String for all
@@ -7,7 +5,6 @@ use chrono::Utc;
 /// This function matches over the current column-type and does a manual conversion
 pub fn reflective_get(row: &postgres::Row, index: usize) -> String {
     let column_type = row.columns().get(index).map(|c| c.type_().name()).unwrap();
-    println!("----- {}", column_type);
     // see https://docs.rs/sqlx/0.4.0-beta.1/sqlx/postgres/types/index.html
     let value = match column_type {
         "bool" => {

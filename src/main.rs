@@ -65,53 +65,34 @@ impl Query {
             query: String::from(""),
         }
     }
-//https://github.com/sfackler/rust-postgres/issues/858
+    //https://github.com/sfackler/rust-postgres/issues/858
     fn query(&self, mut client: postgres::Client) {
         println!("Executing query: {}", self.query);
         let mut saw_first_row = false;
         let column_headers:Vec<String> = Vec::new();
         let res = client.query(&self.query, &[]).unwrap();
-
-      
-
-
+        let num_rows:u64 = res.len() as u64;
+        let mut num_cols:u64 = 0;
         let mut table = Table::new();
         table
         .load_preset(UTF8_FULL)
         .apply_modifier(UTF8_ROUND_CORNERS)
         .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_header(vec!["Header1", "Header2", "Header3"])
-        .add_row(vec![
-                 "This is a text",
-                 "This is another text",
-                 "This is the third text",
-        ])
-        .add_row(vec![
-                 "This is another text",
-                 "Now\nadd some\nmulti line stuff",
-                 "This is awesome",
-        ]);
-        println!("{table}");
+        .set_header(vec!["Header1"]);
+ 
 
         for row in &res {
-
             if !saw_first_row {
-                row.columns().iter().for_each(|c| {
-                    println!("column: {:?}", c.name());
-                });
+                let col_names:Vec<String> = row.columns().iter().map(|c| c.name().to_string()).collect();
+                num_cols = col_names.len() as u64;
+                table.set_header(col_names);
                 saw_first_row = true;
             }
-
-            println!("row: {:?}", row  );
-            let s1:&str = &reflective_get(row, 0);
-            println!("row: {:?}", s1);
-            /* 
-            let id: i32 = row.get(0);
-            let name: &str = row.get(1);
-            let data: Option<&[u8]> = row.get(2);
-            println!("found person: {} {} {:?}", id, name, data);
-            */
+            let row_strs:Vec<String> = (0 .. num_cols).map(|i: u64| reflective_get(row, i as usize)).collect();
+            table.add_row(row_strs);
         }
+        println!("{table}");
+
     }
     fn execute(&self, mut client: postgres::Client) {
         println!("Executing query: {}", self.query);
