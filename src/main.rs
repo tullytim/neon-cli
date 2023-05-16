@@ -23,8 +23,10 @@ const NEON_BASE_URL: &str = "https://console.neon.tech/api/v2/";
 #[command(about = "Does awesome things", long_about = None)]
 struct Cli {
     command: Option<String>,
-    #[arg(short, long)]
+    #[clap(short, long)]
     query: Option<String>,
+    #[arg(short, long, action = clap::ArgAction::Count)]
+    debug: u8,
 }
 
 #[derive(Deserialize, Debug)]
@@ -80,7 +82,6 @@ impl Query {
         .set_content_arrangement(ContentArrangement::Dynamic)
         .set_header(vec!["Header1"]);
  
-
         for row in &res {
             if !saw_first_row {
                 let col_names:Vec<String> = row.columns().iter().map(|c| c.name().to_string()).collect();
@@ -113,15 +114,30 @@ fn initialize_env() -> NeonSession {
 fn main() -> Result<(), Box<dyn Error>> {
    
     let cli = Cli::parse();
-    let query = cli.query.unwrap();
-    println!("Got Query: {}", query);
+    let command: String = cli.command.unwrap();
     dotenv().ok();
 
     let config = initialize_env();
 
-    let  c = config.connect().expect("couldn't connect");
-    let  q: Query = Query { query: query };
-    q.query(c);
+    match command.as_str() {
+        "query" => {
+            let query = cli.query.unwrap();
+            let  c = config.connect().expect("couldn't connect");
+            let  q: Query = Query { query: query };
+            q.query(c);
+        },
+        "projects" => {
+            println!("query command");
+        },
+        "branch" => {
+            println!("query command");
+        },
+        "endpoint" => {
+            println!("query command");
+        },
+        _ => println!("something else!"),
+
+    }
 
     Ok(())
 }
