@@ -1,12 +1,17 @@
+#![allow(dead_code)]
+#![allow(unused_imports)]
+
 use clap::Parser;
 use serde::Deserialize;
-
 use openssl::ssl::{SslConnector, SslMethod};
 use postgres::Client;
 use postgres_openssl::MakeTlsConnector;
-
-extern crate dotenv;
 use dotenv::dotenv;
+use std::{error::Error, io};
+use comfy_table::*;
+use comfy_table::{presets::UTF8_FULL, modifiers::UTF8_ROUND_CORNERS};
+mod neonutils;
+use crate::neonutils::reflective_get;
 
 #[macro_use]
 extern crate dotenv_codegen;
@@ -45,7 +50,7 @@ impl NeonSession {
         let connector = MakeTlsConnector::new(builder.build());
         let uri = format!("{}", self.database);
         println!("uri is {}", uri);
-        let mut client = Client::connect(&uri, connector)?;
+        let client = Client::connect(&uri, connector)?;
         Ok(client)
     }
 }
@@ -60,10 +65,57 @@ impl Query {
             query: String::from(""),
         }
     }
+//https://github.com/sfackler/rust-postgres/issues/858
+    fn query(&self, mut client: postgres::Client) {
+        println!("Executing query: {}", self.query);
+        let mut saw_first_row = false;
+        let column_headers:Vec<String> = Vec::new();
+        let res = client.query(&self.query, &[]).unwrap();
 
+      
+
+
+        let mut table = Table::new();
+        table
+        .load_preset(UTF8_FULL)
+        .apply_modifier(UTF8_ROUND_CORNERS)
+        .set_content_arrangement(ContentArrangement::Dynamic)
+        .set_header(vec!["Header1", "Header2", "Header3"])
+        .add_row(vec![
+                 "This is a text",
+                 "This is another text",
+                 "This is the third text",
+        ])
+        .add_row(vec![
+                 "This is another text",
+                 "Now\nadd some\nmulti line stuff",
+                 "This is awesome",
+        ]);
+        println!("{table}");
+
+        for row in &res {
+
+            if !saw_first_row {
+                row.columns().iter().for_each(|c| {
+                    println!("column: {:?}", c.name());
+                });
+                saw_first_row = true;
+            }
+
+            println!("row: {:?}", row  );
+            let s1:&str = &reflective_get(row, 0);
+            println!("row: {:?}", s1);
+            /* 
+            let id: i32 = row.get(0);
+            let name: &str = row.get(1);
+            let data: Option<&[u8]> = row.get(2);
+            println!("found person: {} {} {:?}", id, name, data);
+            */
+        }
+    }
     fn execute(&self, mut client: postgres::Client) {
         println!("Executing query: {}", self.query);
-        let res = client.batch_execute(&self.query).unwrap();
+        let _res = client.batch_execute(&self.query).unwrap();
     }
 }
 
@@ -77,7 +129,8 @@ fn initialize_env() -> NeonSession {
     config
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn Error>> {
+   
     let cli = Cli::parse();
     let query = cli.query.unwrap();
     println!("Got Query: {}", query);
@@ -85,78 +138,9 @@ fn main() {
 
     let config = initialize_env();
 
-    let mut c = config.connect().expect("couldn't connect");
-    let mut q: Query = Query { query: query };
-    q.execute(c)
+    let  c = config.connect().expect("couldn't connect");
+    let  q: Query = Query { query: query };
+    q.query(c);
 
-
-    /*
-        c
-        .batch_execute(
-            "
-            CREATE TABLE IF NOT EXISTS person (
-                id              SERIAL PRIMARY KEY,
-                name            TEXT NOT NULL,
-                data            BYTEA
-            )
-            ",
-        )
-        .unwrap();
-    */
+    Ok(())
 }
-/*
-fn main() {
-    // basic app information
-    let app = App::new("hello-clap")
-        .version("1.0")
-        .about("Says hello")
-        .author("Michael Snoyman");
-
-    println!("Hello, world!");
-    println!("hello again")
-}*/
-
-/* let API_KEY  = env::var("NEON_API_KEY").unwrap();
-   let c = envy::from_env::<NeonConfig>()
-       .expect("Failed to read config from environment");
-*/
-
-/*
-println!("con_string: {}", con_string);
-
-        let client = Connection::connect(
-            "postgres://postgres@localhost:5432",
-            TlsMode::Require(&negotiator),
-        ).unwrap();
-
-        //let mut client = Client::connect(&con_string.as_str(), NoTls);
-
-
-        client
-            .batch_execute(
-                "
-                CREATE TABLE IF NOT EXISTS person (
-                    id              SERIAL PRIMARY KEY,
-                    name            TEXT NOT NULL,
-                    data            BYTEA
-                )
-                ",
-            )
-            .unwrap(); */
-
-/*
-let cert = fs::read("./neon.tech.cer")?;
-      let cert = Certificate::from_pem(&cert)?;
-      let connector = TlsConnector::builder()
-          .add_root_certificate(cert)
-          .build()?;
-      let connector = MakeTlsConnector::new(connector);
-      let uri = format!("host={}?options=project%3Dep-autumn-sun-308519 user=tim sslmode=require", self.database);
-
-      println!("host is {}", uri);
-
-      let client = postgres::Client::connect(
-          "host={}} user=postgres sslmode=require",
-          connector,
-      )?;
-      Ok(client) */
