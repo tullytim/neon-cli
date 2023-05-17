@@ -6,18 +6,19 @@ use clap::Parser;
 use comfy_table::*;
 use comfy_table::{modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL};
 use dotenv::dotenv;
+use futures::executor::block_on;
 use openssl::ssl::{SslConnector, SslMethod};
 use postgres::Client;
 use postgres_openssl::MakeTlsConnector;
 use serde::Deserialize;
-use std::{error::Error, io};
-use futures::executor::block_on;
 use serde_json::to_string_pretty;
-use serde_json::{Value};
+use serde_json::Value;
+use std::{error::Error, io};
+use std::collections::HashMap;
 mod neonutils;
 mod networking;
 use crate::neonutils::reflective_get;
-use crate::networking::do_http_get;
+use crate::networking::{do_http_get, do_http_post, do_http_delete};
 
 #[macro_use]
 extern crate dotenv_codegen;
@@ -45,9 +46,12 @@ enum Action {
         #[clap(short, long)]
         project: Option<String>,
     },
+    #[clap(about = "Get information about keys in Neon.")]
     Keys {
         #[clap(short, long)]
         action: String,
+        #[clap(short, long)]
+        name: Option<String>,
     },
     #[clap(about = "Get information about branches in Neon.")]
     Branch {
@@ -64,7 +68,7 @@ pub struct NeonSession {
     password: String,
     hostname: String,
     database: String,
-    neon_api_key:String,
+    neon_api_key: String,
 }
 
 impl NeonSession {
@@ -143,18 +147,16 @@ fn initialize_env() -> NeonSession {
     config
 }
 
-fn build_uri(endpoint:String) -> String {
+fn build_uri(endpoint: String) -> String {
     format!("{}{}", NEON_BASE_URL.to_string(), endpoint)
 }
 
-fn handle_http_result(r: Result<String, Box<dyn Error>>) -> serde_json::Result<()>{
+fn handle_http_result(r: Result<String, Box<dyn Error>>) -> serde_json::Result<()> {
     match r {
         Ok(s) => {
-            
-            let json_blob:Value = serde_json::from_str(&s)?;
+            let json_blob: Value = serde_json::from_str(&s)?;
             let formatted = to_string_pretty(&json_blob);
             println!("{}", formatted.unwrap());
-            
         }
         Err(e) => {
             println!("Error: {}", e);
@@ -163,18 +165,26 @@ fn handle_http_result(r: Result<String, Box<dyn Error>>) -> serde_json::Result<(
     Ok(())
 }
 
-fn perform_keys_action(action: &String, neon_config: &NeonSession) {
+#[tokio::main]
+async fn perform_keys_action(action: &String, name: &String, neon_config: &NeonSession) {
     match action {
         s if s == "list" => {
             let uri = build_uri("/api_keys".to_string());
-            println!("uri is {}", uri);
-            block_on(do_http_get(uri, neon_config));
+            let r = block_on(do_http_get(uri, &neon_config));
+            let h: Result<(), serde_json::Error> = handle_http_result(r);
         }
         s if s == "create" => {
-            println!("create key");
+            let mut post_body:HashMap<String,String> = HashMap::new();
+            post_body.insert("key_name".to_string(), name.to_string()); 
+            let uri = build_uri("/api_keys".to_string());
+            let r = block_on(do_http_post(uri, &post_body, &neon_config));
+            let h: Result<(), serde_json::Error> = handle_http_result(r);
         }
-        s if s == "delete" => {
-            println!("delete key");
+        s if s == "revoke" => {
+            println!("revoke key");
+            let uri = build_uri(format!("/api_keys/{}", name.to_string()));
+            let r = block_on(do_http_delete(uri, &neon_config));
+            let h: Result<(), serde_json::Error> = handle_http_result(r);
         }
         _ => {
             println!("unknown action");
@@ -182,29 +192,34 @@ fn perform_keys_action(action: &String, neon_config: &NeonSession) {
     }
 }
 
-fn perform_projects_action(project: &String, neon_config: &NeonSession){
+#[tokio::main]
+async fn perform_projects_action(project: &String, neon_config: &NeonSession) {
     if project == "" {
         let uri = build_uri("/projects".to_string());
         let r = block_on(do_http_get(uri, neon_config));
         let h: Result<(), serde_json::Error> = handle_http_result(r);
-    }
-    else if project != "" {
-        let endpoint:String = format!("{}{}", "/projects/".to_string(), project);
+    } else if project != "" {
+        let endpoint: String = format!("{}{}", "/projects/".to_string(), project);
         let uri = build_uri(endpoint);
         let r = block_on(do_http_get(uri, neon_config));
         let h: Result<(), serde_json::Error> = handle_http_result(r);
     }
 }
 
-fn perform_branches_action(project: &String, branch: &String, neon_config: &NeonSession) {
+#[tokio::main]
+async fn perform_branches_action(project: &String, branch: &String, neon_config: &NeonSession) {
     if branch == "" {
-        let endpoint:String = format!("{}{}/branches", "/projects/".to_string(), project);
+        let endpoint: String = format!("{}{}/branches", "/projects/".to_string(), project);
         let uri = build_uri(endpoint);
         let r = block_on(do_http_get(uri, neon_config));
         let h: Result<(), serde_json::Error> = handle_http_result(r);
-    }
-    else if branch != ""{
-        let endpoint:String = format!("{}{}/branches/{}", "/projects/".to_string(), project, branch);
+    } else if branch != "" {
+        let endpoint: String = format!(
+            "{}{}/branches/{}",
+            "/projects/".to_string(),
+            project,
+            branch
+        );
         let uri = build_uri(endpoint);
         println!("URI: {}", uri);
         let r = block_on(do_http_get(uri, neon_config));
@@ -212,8 +227,7 @@ fn perform_branches_action(project: &String, branch: &String, neon_config: &Neon
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+fn main() {
     let cli = Cli::parse();
     let subcommand = cli.action;
     dotenv().ok();
@@ -228,11 +242,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
             q.query(c);
         },
         Action::Projects { project } => {
-            let p = project.unwrap_or("".to_string());
+            let p = project.unwrap_or("".to_string()); // project id
             perform_projects_action(&p, &config)
         },
-        Action::Keys { action } => {
-            perform_keys_action(&action, &config);
+        Action::Keys { action, name } => {
+            let name = name.unwrap_or("".to_string()); // name of the key to create
+            perform_keys_action(&action, &name, &config);
         },
         Action::Branch { project, branch } => {
             let p = project.unwrap_or("".to_string());
@@ -240,6 +255,4 @@ async fn main() -> Result<(), Box<dyn Error>> {
             perform_branches_action(&p, &b, &config);
         }
     }
-
-    Ok(())
 }
