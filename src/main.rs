@@ -10,13 +10,17 @@ use postgres::Client;
 use postgres_openssl::MakeTlsConnector;
 use serde::Deserialize;
 use std::{error::Error, io};
+use futures::executor::block_on;
+
 mod neonutils;
+mod networking;
 use crate::neonutils::reflective_get;
+use crate::networking::do_http_get;
 
 #[macro_use]
 extern crate dotenv_codegen;
 
-const NEON_BASE_URL: &str = "https://console.neon.tech/api/v2/";
+const NEON_BASE_URL: &str = "https://console.neon.tech/api/v2";
 
 #[derive(Parser)]
 #[command(author = "Tim Tully. <tim@menlovc.com>")]
@@ -38,6 +42,10 @@ enum Action {
     Projects {
         #[clap(short, long)]
         project: String,
+    },
+    Keys {
+        #[clap(short, long)]
+        action: String,
     },
 }
 
@@ -83,9 +91,7 @@ impl Query {
     fn query(&self, mut client: postgres::Client) {
         println!("Executing query: {}", self.query);
         let mut saw_first_row = false;
-        let column_headers: Vec<String> = Vec::new();
         let res = client.query(&self.query, &[]).unwrap();
-        let num_rows: u64 = res.len() as u64;
         let mut num_cols: u64 = 0;
         let mut table = Table::new();
         table
@@ -125,7 +131,33 @@ fn initialize_env() -> NeonSession {
     config
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn build_uri(endpoint:String) -> String {
+    format!("{}{}", NEON_BASE_URL.to_string(), endpoint)
+}
+
+fn perform_keys_action(action: &String) {
+    println!("action is {}", action);
+    match action {
+        s if s == "list" => {
+            println!("list keys");
+            let uri = build_uri("/apikeys/".to_string());
+            println!("uri is {}", uri);
+            block_on(do_http_get(uri));
+        }
+        s if s == "create" => {
+            println!("create key");
+        }
+        s if s == "delete" => {
+            println!("delete key");
+        }
+        _ => {
+            println!("unknown action");
+        }
+    }
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
     //let command: String = cli.command.unwrap();
     let subcommand = cli.action;
@@ -145,7 +177,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         Action::Projects { project } => {
             println!("project is {}", project);
         },
-        _ => println!("something else!"),
+        Action::Keys { action } => {
+            println!("action is {}", action);
+            perform_keys_action(&action);
+        },
     }
 
     Ok(())
