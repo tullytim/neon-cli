@@ -13,12 +13,12 @@ use postgres_openssl::MakeTlsConnector;
 use serde::Deserialize;
 use serde_json::to_string_pretty;
 use serde_json::Value;
-use std::{error::Error, io};
 use std::collections::HashMap;
+use std::{error::Error, io};
 mod neonutils;
 mod networking;
 use crate::neonutils::reflective_get;
-use crate::networking::{do_http_get, do_http_post, do_http_delete};
+use crate::networking::{do_http_delete, do_http_get, do_http_post};
 
 #[macro_use]
 extern crate dotenv_codegen;
@@ -56,9 +56,13 @@ enum Action {
     #[clap(about = "Get information about branches in Neon.")]
     Branch {
         #[clap(short, long)]
+        action: String,
+        #[clap(short, long)]
         project: Option<String>,
         #[clap(short, long)]
         branch: Option<String>,
+        #[clap(short, long)]
+        roles: Option<String>,
     },
 }
 
@@ -174,8 +178,8 @@ async fn perform_keys_action(action: &String, name: &String, neon_config: &NeonS
             let h: Result<(), serde_json::Error> = handle_http_result(r);
         }
         s if s == "create" => {
-            let mut post_body:HashMap<String,String> = HashMap::new();
-            post_body.insert("key_name".to_string(), name.to_string()); 
+            let mut post_body: HashMap<String, String> = HashMap::new();
+            post_body.insert("key_name".to_string(), name.to_string());
             let uri = build_uri("/api_keys".to_string());
             let r = block_on(do_http_post(uri, &post_body, &neon_config));
             let h: Result<(), serde_json::Error> = handle_http_result(r);
@@ -206,23 +210,38 @@ async fn perform_projects_action(project: &String, neon_config: &NeonSession) {
     }
 }
 
+// tim@yoda neon-cli % target/debug/neon-cli branch -a list-roles -p white-voice-129396 -b br-dry-silence-599905
 #[tokio::main]
-async fn perform_branches_action(project: &String, branch: &String, neon_config: &NeonSession) {
-    if branch == "" {
-        let endpoint: String = format!("{}{}/branches", "/projects/".to_string(), project);
-        let uri = build_uri(endpoint);
-        let r = block_on(do_http_get(uri, neon_config));
+async fn perform_branches_action(
+    action: &String,
+    project: &String,
+    branch: &String,
+    roles: &String,
+    neon_config: &NeonSession,
+) {
+    if action == "list-roles" {
+        let endpoint: String = format!("/projects/{}/branches/{}/roles", project, branch);
+        let r = block_on(do_http_get(build_uri(endpoint), neon_config));
         let h: Result<(), serde_json::Error> = handle_http_result(r);
-    } else if branch != "" {
-        let endpoint: String = format!(
-            "{}{}/branches/{}",
-            "/projects/".to_string(),
-            project,
-            branch
-        );
-        let uri = build_uri(endpoint);
-        println!("URI: {}", uri);
-        let r = block_on(do_http_get(uri, neon_config));
+    } else if action == "list-endpoints" {
+        let endpoint: String = format!("/projects/{}/branches/{}/endpoints", project, branch);
+        let r = block_on(do_http_get(build_uri(endpoint), neon_config));
+        let h: Result<(), serde_json::Error> = handle_http_result(r);
+    } else if action == "list-branches" {
+        let endpoint: String = format!("/projects/{}/branches", project);
+        let r = block_on(do_http_get(build_uri(endpoint), neon_config));
+        let h: Result<(), serde_json::Error> = handle_http_result(r);
+    } else if action == "branch-details" {
+        let endpoint: String = format!("/projects/{}/branches/{}", project, branch);
+        let r = block_on(do_http_get(build_uri(endpoint), neon_config));
+        let h: Result<(), serde_json::Error> = handle_http_result(r);
+    } else if action == "list-databases" {
+        let endpoint: String = format!("/projects/{}/branches/{}/databases", project, branch);
+        let r = block_on(do_http_get(build_uri(endpoint), neon_config));
+        let h: Result<(), serde_json::Error> = handle_http_result(r);
+    } else if action == "database-details" {
+        let endpoint: String = format!("/projects/{}/branches/{}/databases/{}", project, branch, neon_config.database);
+        let r = block_on(do_http_get(build_uri(endpoint), neon_config));
         let h: Result<(), serde_json::Error> = handle_http_result(r);
     }
 }
@@ -240,19 +259,25 @@ fn main() {
             let c = config.connect().expect("couldn't connect");
             let q: Query = Query { query: sql };
             q.query(c);
-        },
+        }
         Action::Projects { project } => {
             let p = project.unwrap_or("".to_string()); // project id
             perform_projects_action(&p, &config)
-        },
+        }
         Action::Keys { action, name } => {
             let name = name.unwrap_or("".to_string()); // name of the key to create
             perform_keys_action(&action, &name, &config);
-        },
-        Action::Branch { project, branch } => {
+        }
+        Action::Branch {
+            action,
+            project,
+            branch,
+            roles,
+        } => {
             let p = project.unwrap_or("".to_string());
             let b: String = branch.unwrap_or("".to_string());
-            perform_branches_action(&p, &b, &config);
+            let r: String = roles.unwrap_or("".to_string());
+            perform_branches_action(&action, &p, &b, &r, &config);
         }
     }
 }
