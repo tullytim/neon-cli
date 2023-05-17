@@ -24,8 +24,6 @@ const NEON_BASE_URL: &str = "https://console.neon.tech/api/v2/";
 struct Cli {
     #[clap(subcommand)]
     action: Action,
-    #[clap(short, long)]
-    sql: Option<String>,
     #[arg(short, long, action = clap::ArgAction::Count)]
     debug: u8,
 }
@@ -35,6 +33,11 @@ enum Action {
     Query {
         #[clap(short, long)]
         sql: String,
+    },
+    #[clap(about = "Get information about projects in Neon.")]
+    Projects {
+        #[clap(short, long)]
+        project: String,
     },
 }
 
@@ -138,7 +141,10 @@ fn main() -> Result<(), Box<dyn Error>> {
             let c = config.connect().expect("couldn't connect");
             let q: Query = Query { query: sql };
             q.query(c);
-        }
+        },
+        Action::Projects { project } => {
+            println!("project is {}", project);
+        },
         _ => println!("something else!"),
     }
 
