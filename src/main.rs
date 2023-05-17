@@ -49,6 +49,13 @@ enum Action {
         #[clap(short, long)]
         action: String,
     },
+    #[clap(about = "Get information about branches in Neon.")]
+    Branch {
+        #[clap(short, long)]
+        project: Option<String>,
+        #[clap(short, long)]
+        branch: Option<String>,
+    },
 }
 
 #[derive(Deserialize, Debug)]
@@ -146,7 +153,7 @@ fn handle_http_result(r: Result<String, Box<dyn Error>>) -> serde_json::Result<(
             
             let json_blob:Value = serde_json::from_str(&s)?;
             let formatted = to_string_pretty(&json_blob);
-            println!("outputting formatted json: {}", formatted.unwrap());
+            println!("{}", formatted.unwrap());
             
         }
         Err(e) => {
@@ -176,23 +183,38 @@ fn perform_keys_action(action: &String, neon_config: &NeonSession) {
 }
 
 fn perform_projects_action(project: &String, neon_config: &NeonSession){
-    println!("project is {}", project);
     if project == "" {
         let uri = build_uri("/projects".to_string());
-        block_on(do_http_get(uri, neon_config));
+        let r = block_on(do_http_get(uri, neon_config));
+        let h: Result<(), serde_json::Error> = handle_http_result(r);
     }
     else if project != "" {
         let endpoint:String = format!("{}{}", "/projects/".to_string(), project);
         let uri = build_uri(endpoint);
         let r = block_on(do_http_get(uri, neon_config));
-        let h = handle_http_result(r);
+        let h: Result<(), serde_json::Error> = handle_http_result(r);
+    }
+}
+
+fn perform_branches_action(project: &String, branch: &String, neon_config: &NeonSession) {
+    if branch == "" {
+        let endpoint:String = format!("{}{}/branches", "/projects/".to_string(), project);
+        let uri = build_uri(endpoint);
+        let r = block_on(do_http_get(uri, neon_config));
+        let h: Result<(), serde_json::Error> = handle_http_result(r);
+    }
+    else if branch != ""{
+        let endpoint:String = format!("{}{}/branches/{}", "/projects/".to_string(), project, branch);
+        let uri = build_uri(endpoint);
+        println!("URI: {}", uri);
+        let r = block_on(do_http_get(uri, neon_config));
+        let h: Result<(), serde_json::Error> = handle_http_result(r);
     }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
-    //let command: String = cli.command.unwrap();
     let subcommand = cli.action;
     dotenv().ok();
 
@@ -206,13 +228,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
             q.query(c);
         },
         Action::Projects { project } => {
-            //println!("project is {}", project.expect("no project specified"));
             let p = project.unwrap_or("".to_string());
             perform_projects_action(&p, &config)
         },
         Action::Keys { action } => {
             perform_keys_action(&action, &config);
         },
+        Action::Branch { project, branch } => {
+            let p = project.unwrap_or("".to_string());
+            let b: String = branch.unwrap_or("".to_string());
+            perform_branches_action(&p, &b, &config);
+        }
     }
 
     Ok(())
