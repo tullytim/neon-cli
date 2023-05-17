@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
+#![allow(unused_variables)]
 
 use clap::Parser;
 use comfy_table::*;
@@ -11,7 +12,8 @@ use postgres_openssl::MakeTlsConnector;
 use serde::Deserialize;
 use std::{error::Error, io};
 use futures::executor::block_on;
-
+use serde_json::to_string_pretty;
+use serde_json::{Value};
 mod neonutils;
 mod networking;
 use crate::neonutils::reflective_get;
@@ -41,7 +43,7 @@ enum Action {
     #[clap(about = "Get information about projects in Neon.")]
     Projects {
         #[clap(short, long)]
-        project: String,
+        project: Option<String>,
     },
     Keys {
         #[clap(short, long)]
@@ -50,11 +52,12 @@ enum Action {
 }
 
 #[derive(Deserialize, Debug)]
-struct NeonSession {
+pub struct NeonSession {
     user: String,
     password: String,
     hostname: String,
     database: String,
+    neon_api_key:String,
 }
 
 impl NeonSession {
@@ -64,6 +67,7 @@ impl NeonSession {
             password: String::from(""),
             hostname: String::from(""),
             database: String::from(""),
+            neon_api_key: String::from(""),
         }
     }
 
@@ -127,6 +131,7 @@ fn initialize_env() -> NeonSession {
         password: dotenv!("PASSWORD").to_string(),
         hostname: dotenv!("HOSTNAME").to_string(),
         database: dotenv!("DATABASE").to_string(),
+        neon_api_key: dotenv!("NEON_API_KEY").to_string(),
     };
     config
 }
@@ -135,14 +140,28 @@ fn build_uri(endpoint:String) -> String {
     format!("{}{}", NEON_BASE_URL.to_string(), endpoint)
 }
 
-fn perform_keys_action(action: &String) {
-    println!("action is {}", action);
+fn handle_http_result(r: Result<String, Box<dyn Error>>) -> serde_json::Result<()>{
+    match r {
+        Ok(s) => {
+            
+            let json_blob:Value = serde_json::from_str(&s)?;
+            let formatted = to_string_pretty(&json_blob);
+            println!("outputting formatted json: {}", formatted.unwrap());
+            
+        }
+        Err(e) => {
+            println!("Error: {}", e);
+        }
+    }
+    Ok(())
+}
+
+fn perform_keys_action(action: &String, neon_config: &NeonSession) {
     match action {
         s if s == "list" => {
-            println!("list keys");
-            let uri = build_uri("/apikeys/".to_string());
+            let uri = build_uri("/api_keys".to_string());
             println!("uri is {}", uri);
-            block_on(do_http_get(uri));
+            block_on(do_http_get(uri, neon_config));
         }
         s if s == "create" => {
             println!("create key");
@@ -156,13 +175,25 @@ fn perform_keys_action(action: &String) {
     }
 }
 
+fn perform_projects_action(project: &String, neon_config: &NeonSession){
+    println!("project is {}", project);
+    if project == "" {
+        let uri = build_uri("/projects".to_string());
+        block_on(do_http_get(uri, neon_config));
+    }
+    else if project != "" {
+        let endpoint:String = format!("{}{}", "/projects/".to_string(), project);
+        let uri = build_uri(endpoint);
+        let r = block_on(do_http_get(uri, neon_config));
+        let h = handle_http_result(r);
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
     //let command: String = cli.command.unwrap();
     let subcommand = cli.action;
-    println!("My enum value: {:?}", subcommand);
-
     dotenv().ok();
 
     let config = initialize_env();
@@ -175,11 +206,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
             q.query(c);
         },
         Action::Projects { project } => {
-            println!("project is {}", project);
+            //println!("project is {}", project.expect("no project specified"));
+            let p = project.unwrap_or("".to_string());
+            perform_projects_action(&p, &config)
         },
         Action::Keys { action } => {
-            println!("action is {}", action);
-            perform_keys_action(&action);
+            perform_keys_action(&action, &config);
         },
     }
 
