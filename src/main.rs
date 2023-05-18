@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
-#![allow(unused_variables)]
+//#![allow(unused_variables)]
 
 use clap::Parser;
 use comfy_table::*;
@@ -44,6 +44,8 @@ enum Action {
     #[clap(about = "Get information about projects in Neon.")]
     Projects {
         #[clap(short, long)]
+        action: String,
+        #[clap(short, long)]
         project: Option<String>,
     },
     #[clap(about = "Get information about keys in Neon.")]
@@ -64,6 +66,31 @@ enum Action {
         #[clap(short, long)]
         roles: Option<String>,
     },
+    #[clap(about = "Get information about endpoints in Neon.")]
+    Endpoints {
+        #[clap(short, long)]
+        action: String,
+        #[clap(short, long)]
+        project: Option<String>,
+        #[clap(short, long)]
+        endpoint: Option<String>,
+    },
+    #[clap(about = "Get information about operations in Neon.")]
+    Operations {
+        #[clap(short, long)]
+        action: String,
+        #[clap(short, long)]
+        project: Option<String>,
+        #[clap(short, long)]
+        operation: Option<String>,
+    },
+    #[clap(about = "Get information about endpoints in Neon.")]
+    Consumption {
+        #[clap(short, long)]
+        limit: Option<u32>,
+        #[clap(short, long)]
+        cursor: Option<String>,
+    }
 }
 
 #[derive(Deserialize, Debug)]
@@ -200,15 +227,20 @@ async fn perform_keys_action(action: &String, name: &String, neon_config: &NeonS
 }
 
 #[tokio::main]
-async fn perform_projects_action(project: &String, neon_config: &NeonSession) {
-    if project == "" {
+async fn perform_projects_action(action: &String, project: &String, neon_config: &NeonSession) {
+    if action == "list-projects" {
         let uri = build_uri("/projects".to_string());
         let r = block_on(do_http_get(uri, neon_config));
         let h: Result<(), serde_json::Error> = handle_http_result(r);
-    } else if project != "" {
-        let endpoint: String = format!("{}{}", "/projects/".to_string(), project);
+    } else if action == "project-details" { // target/debug/neon-cli projects -a project-details -p white-voice-129396
+        let endpoint: String = format!("/projects/{}", project);
         let uri = build_uri(endpoint);
         let r = block_on(do_http_get(uri, neon_config));
+        let h: Result<(), serde_json::Error> = handle_http_result(r);
+    } else if action == "delete-project" {
+        let endpoint: String = format!("/projects/{}", project);
+        let uri = build_uri(endpoint);
+        let r = block_on(do_http_delete(uri, neon_config));
         let h: Result<(), serde_json::Error> = handle_http_result(r);
     }
 }
@@ -218,33 +250,58 @@ async fn perform_projects_action(project: &String, neon_config: &NeonSession) {
 async fn perform_branches_action(action: &String, project: &String, branch: &String, roles: &String, neon_config: &NeonSession) {
     if action == "list-roles" {
         let endpoint: String = format!("/projects/{}/branches/{}/roles", project, branch);
-        let r = block_on(do_http_get(build_uri(endpoint), neon_config));
+        let r = block_on(do_http_get(build_uri(endpoint), &neon_config));
         let h: Result<(), serde_json::Error> = handle_http_result(r);
     } else if action == "list-endpoints" {
         let endpoint: String = format!("/projects/{}/branches/{}/endpoints", project, branch);
-        let r = block_on(do_http_get(build_uri(endpoint), neon_config));
+        let r = block_on(do_http_get(build_uri(endpoint), &neon_config));
         let h: Result<(), serde_json::Error> = handle_http_result(r);
     } else if action == "list-branches" {
         let endpoint: String = format!("/projects/{}/branches", project);
-        let r = block_on(do_http_get(build_uri(endpoint), neon_config));
+        let r = block_on(do_http_get(build_uri(endpoint), &neon_config));
         let h: Result<(), serde_json::Error> = handle_http_result(r);
     } else if action == "branch-details" {
         let endpoint: String = format!("/projects/{}/branches/{}", project, branch);
-        let r = block_on(do_http_get(build_uri(endpoint), neon_config));
+        let r = block_on(do_http_get(build_uri(endpoint), &neon_config));
         let h: Result<(), serde_json::Error> = handle_http_result(r);
     } else if action == "list-databases" {
         let endpoint: String = format!("/projects/{}/branches/{}/databases", project, branch);
-        let r = block_on(do_http_get(build_uri(endpoint), neon_config));
+        let r = block_on(do_http_get(build_uri(endpoint), &neon_config));
         let h: Result<(), serde_json::Error> = handle_http_result(r);
     } else if action == "database-details" {
         let endpoint: String = format!("/projects/{}/branches/{}/databases/{}", project, branch, neon_config.database);
-        let r = block_on(do_http_get(build_uri(endpoint), neon_config));
+        let r = block_on(do_http_get(build_uri(endpoint), &neon_config));
         let h: Result<(), serde_json::Error> = handle_http_result(r);
     } else if action == "delete-branch" {
         let endpoint: String = format!("/projects/{}/branches/{}", project, branch);
-        let r = block_on(do_http_delete(build_uri(endpoint), neon_config));
+        let r = block_on(do_http_delete(build_uri(endpoint), &neon_config));
+        //let h: Result<(), serde_json::Error> = handle_http_result(r);
+        handle_http_result(r).ok();
+    } else if action == "create-branch" {
+
+    }
+
+}
+
+
+#[tokio::main]
+async fn perform_endpoints_action(action: &String, project: &String, endpoint: &String, neon_config: &NeonSession) {
+    if action == "list-endpoints" { // target/debug/neon-cli endpoints -a list-endpoints -p white-voice-129396
+        let endpoint: String = format!("/projects/{}/endpoints", project);
+        let r = block_on(do_http_get(build_uri(endpoint), &neon_config));
+        let h: Result<(), serde_json::Error> = handle_http_result(r);
+    } else if action == "endpoint-details" {
+        let endpoint: String = format!("/projects/{}/endpoints/{}", project, endpoint);
+        let r = block_on(do_http_get(build_uri(endpoint), &neon_config));
         let h: Result<(), serde_json::Error> = handle_http_result(r);
     }
+}
+
+#[tokio::main]
+async fn perform_consumption_action(limit:u32, cursor:&String, neon_config: &NeonSession) {
+    let endpoint: String = format!("/consumption/projects?cursor={}&limit={}", cursor, limit);
+    let r = block_on(do_http_get(build_uri(endpoint), &neon_config));
+    let h: Result<(), serde_json::Error> = handle_http_result(r);
 }
 
 fn main() {
@@ -256,29 +313,38 @@ fn main() {
 
     match subcommand {
         Action::Query { sql } => {
-            println!("sql is {}", sql);
             let c = config.connect().expect("couldn't connect");
             let q: Query = Query { query: sql };
             q.query(c);
         }
-        Action::Projects { project } => {
+        Action::Projects { action, project } => {
             let p = project.unwrap_or("".to_string()); // project id
-            perform_projects_action(&p, &config)
+            perform_projects_action(&action, &p, &config)
         }
         Action::Keys { action, name } => {
             let name = name.unwrap_or("".to_string()); // name of the key to create
             perform_keys_action(&action, &name, &config);
         }
-        Action::Branch {
-            action,
-            project,
-            branch,
-            roles,
-        } => {
+        Action::Branch {action, project, branch, roles} => {
             let p = project.unwrap_or("".to_string());
             let b: String = branch.unwrap_or("".to_string());
             let r: String = roles.unwrap_or("".to_string());
             perform_branches_action(&action, &p, &b, &r, &config);
-        }
+        },
+        Action::Endpoints { action, project, endpoint } => {
+            let p = project.unwrap_or("".to_string());
+            let e: String = endpoint.unwrap_or("".to_string());
+            perform_endpoints_action(&action, &p, &e, &config);
+        },
+        Action::Consumption { limit, cursor } => {
+            let limit = limit.unwrap_or(16);
+            let cursor: String = cursor.unwrap_or("".to_string());
+            perform_consumption_action(limit, &cursor, &config);
+        },
+        Action::Operations { action, project, operation } => {
+            let p = project.unwrap_or("".to_string());
+            let o: String = operation.unwrap_or("".to_string());
+            //perform_operations_action(&action, &p, &o, &config);
+        },
     }
 }
