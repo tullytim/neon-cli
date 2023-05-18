@@ -64,3 +64,15 @@ DATABASE=neondb
 CONNECT_STRING=postgres://tim:ddddddddddd@ep-foo-bar-1111111.us-west-2.aws.neon.tech:5432/neondb
 NEON_API_KEY=abcdefghijklmnopkrstuvwxyz123456789987654321
 ```
+
+## License
+
+This project is licensed under the [MIT license].
+
+[MIT license]: https://github.com/tullytim/neon-cli/blob/master/LICENSE
+
+### Contribution
+
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in Tokio by you, shall be licensed as MIT, without any additional
+terms or conditions.
