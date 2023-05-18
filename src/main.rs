@@ -201,107 +201,94 @@ fn handle_http_result(r: Result<String, Box<dyn Error>>) -> serde_json::Result<(
 
 #[tokio::main]
 async fn perform_keys_action(action: &String, name: &String, neon_config: &NeonSession) {
+    let mut r:Result<String, Box<dyn Error>> = Ok("".to_string());
     match action {
         s if s == "list" => {
             let uri = build_uri("/api_keys".to_string());
-            let r = block_on(do_http_get(uri, &neon_config));
-            let h: Result<(), serde_json::Error> = handle_http_result(r);
+            r = block_on(do_http_get(uri, &neon_config));
         }
         s if s == "create" => {
             let mut post_body: HashMap<String, String> = HashMap::new();
             post_body.insert("key_name".to_string(), name.to_string());
             let uri = build_uri("/api_keys".to_string());
-            let r = block_on(do_http_post(uri, &post_body, &neon_config));
-            let h: Result<(), serde_json::Error> = handle_http_result(r);
+            r = block_on(do_http_post(uri, &post_body, &neon_config));
         }
         s if s == "revoke" => {
-            println!("revoke key");
             let uri = build_uri(format!("/api_keys/{}", name.to_string()));
-            let r = block_on(do_http_delete(uri, &neon_config));
-            let h: Result<(), serde_json::Error> = handle_http_result(r);
+            r = block_on(do_http_delete(uri, &neon_config));
         }
         _ => {
             println!("unknown action");
         }
     }
+    handle_http_result(r).ok();
 }
 
 #[tokio::main]
 async fn perform_projects_action(action: &String, project: &String, neon_config: &NeonSession) {
+    let mut r:Result<String, Box<dyn Error>> = Ok("".to_string());
     if action == "list-projects" {
         let uri = build_uri("/projects".to_string());
-        let r = block_on(do_http_get(uri, neon_config));
-        let h: Result<(), serde_json::Error> = handle_http_result(r);
+        r = block_on(do_http_get(uri, neon_config));
     } else if action == "project-details" { // target/debug/neon-cli projects -a project-details -p white-voice-129396
-        let endpoint: String = format!("/projects/{}", project);
-        let uri = build_uri(endpoint);
-        let r = block_on(do_http_get(uri, neon_config));
-        let h: Result<(), serde_json::Error> = handle_http_result(r);
+        let uri = build_uri(format!("/projects/{}", project));
+        r = block_on(do_http_get(uri, neon_config));
     } else if action == "delete-project" {
-        let endpoint: String = format!("/projects/{}", project);
-        let uri = build_uri(endpoint);
-        let r = block_on(do_http_delete(uri, neon_config));
-        let h: Result<(), serde_json::Error> = handle_http_result(r);
+        let uri = build_uri(format!("/projects/{}", project));
+        r = block_on(do_http_delete(uri, neon_config));
     }
+    handle_http_result(r).ok();
 }
 
 // tim@yoda neon-cli % target/debug/neon-cli branch -a list-roles -p white-voice-129396 -b br-dry-silence-599905
 #[tokio::main]
 async fn perform_branches_action(action: &String, project: &String, branch: &String, roles: &String, neon_config: &NeonSession) {
+    let mut r:Result<String, Box<dyn Error>> = Ok("".to_string());
     if action == "list-roles" {
         let endpoint: String = format!("/projects/{}/branches/{}/roles", project, branch);
-        let r = block_on(do_http_get(build_uri(endpoint), &neon_config));
-        let h: Result<(), serde_json::Error> = handle_http_result(r);
+        r = block_on(do_http_get(build_uri(endpoint), &neon_config));
     } else if action == "list-endpoints" {
         let endpoint: String = format!("/projects/{}/branches/{}/endpoints", project, branch);
-        let r = block_on(do_http_get(build_uri(endpoint), &neon_config));
-        let h: Result<(), serde_json::Error> = handle_http_result(r);
+        r = block_on(do_http_get(build_uri(endpoint), &neon_config));
     } else if action == "list-branches" {
         let endpoint: String = format!("/projects/{}/branches", project);
-        let r = block_on(do_http_get(build_uri(endpoint), &neon_config));
-        let h: Result<(), serde_json::Error> = handle_http_result(r);
+        r = block_on(do_http_get(build_uri(endpoint), &neon_config));
     } else if action == "branch-details" {
         let endpoint: String = format!("/projects/{}/branches/{}", project, branch);
-        let r = block_on(do_http_get(build_uri(endpoint), &neon_config));
-        let h: Result<(), serde_json::Error> = handle_http_result(r);
+        r = block_on(do_http_get(build_uri(endpoint), &neon_config));
     } else if action == "list-databases" {
         let endpoint: String = format!("/projects/{}/branches/{}/databases", project, branch);
-        let r = block_on(do_http_get(build_uri(endpoint), &neon_config));
-        let h: Result<(), serde_json::Error> = handle_http_result(r);
+        r = block_on(do_http_get(build_uri(endpoint), &neon_config));
     } else if action == "database-details" {
         let endpoint: String = format!("/projects/{}/branches/{}/databases/{}", project, branch, neon_config.database);
-        let r = block_on(do_http_get(build_uri(endpoint), &neon_config));
-        let h: Result<(), serde_json::Error> = handle_http_result(r);
+        r = block_on(do_http_get(build_uri(endpoint), &neon_config));
     } else if action == "delete-branch" {
         let endpoint: String = format!("/projects/{}/branches/{}", project, branch);
-        let r = block_on(do_http_delete(build_uri(endpoint), &neon_config));
-        //let h: Result<(), serde_json::Error> = handle_http_result(r);
-        handle_http_result(r).ok();
+        r = block_on(do_http_delete(build_uri(endpoint), &neon_config));
     } else if action == "create-branch" {
-
     }
-
+    handle_http_result(r).ok();
 }
 
 
 #[tokio::main]
 async fn perform_endpoints_action(action: &String, project: &String, endpoint: &String, neon_config: &NeonSession) {
+    let mut r:Result<String, Box<dyn Error>> = Ok("".to_string());
     if action == "list-endpoints" { // target/debug/neon-cli endpoints -a list-endpoints -p white-voice-129396
         let endpoint: String = format!("/projects/{}/endpoints", project);
-        let r = block_on(do_http_get(build_uri(endpoint), &neon_config));
-        let h: Result<(), serde_json::Error> = handle_http_result(r);
+        r = block_on(do_http_get(build_uri(endpoint), &neon_config));
     } else if action == "endpoint-details" {
         let endpoint: String = format!("/projects/{}/endpoints/{}", project, endpoint);
-        let r = block_on(do_http_get(build_uri(endpoint), &neon_config));
-        let h: Result<(), serde_json::Error> = handle_http_result(r);
+        r = block_on(do_http_get(build_uri(endpoint), &neon_config));
     }
+    handle_http_result(r).ok();
 }
 
 #[tokio::main]
-async fn perform_consumption_action(limit:u32, cursor:&String, neon_config: &NeonSession) {
+async fn perform_consumption_action(limit:u32, cursor:&String, neon_config: &NeonSession) { //target/debug/neon-cli consumption 
     let endpoint: String = format!("/consumption/projects?cursor={}&limit={}", cursor, limit);
     let r = block_on(do_http_get(build_uri(endpoint), &neon_config));
-    let h: Result<(), serde_json::Error> = handle_http_result(r);
+    handle_http_result(r).ok();
 }
 
 fn main() {
@@ -342,8 +329,8 @@ fn main() {
             perform_consumption_action(limit, &cursor, &config);
         },
         Action::Operations { action, project, operation } => {
-            let p = project.unwrap_or("".to_string());
-            let o: String = operation.unwrap_or("".to_string());
+            let _p = project.unwrap_or("".to_string());
+            let _o: String = operation.unwrap_or("".to_string());
             //perform_operations_action(&action, &p, &o, &config);
         },
     }
