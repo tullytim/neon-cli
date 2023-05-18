@@ -27,7 +27,7 @@ const NEON_BASE_URL: &str = "https://console.neon.tech/api/v2";
 
 #[derive(Parser)]
 #[command(author = "Tim Tully. <tim@menlovc.com>")]
-#[command(about = "Does awesome things")]
+#[command(about = "Neon Postgres Database CLI")]
 struct Cli {
     #[clap(subcommand)]
     action: Action,
@@ -90,6 +90,13 @@ enum Action {
         limit: Option<u32>,
         #[clap(short, long)]
         cursor: Option<String>,
+    },
+    #[clap(about = "Get information about endpoints in Neon.")]
+    Import {
+        #[clap(short, long)]
+        file: String,
+        #[clap(short, long)]
+        delimiter: Option<String>,
     }
 }
 
@@ -285,10 +292,18 @@ async fn perform_endpoints_action(action: &String, project: &String, endpoint: &
 }
 
 #[tokio::main]
-async fn perform_consumption_action(limit:u32, cursor:&String, neon_config: &NeonSession) { //target/debug/neon-cli consumption 
+async fn perform_consumption_action(limit:u32, cursor:&String, neon_config: &NeonSession) { 
     let endpoint: String = format!("/consumption/projects?cursor={}&limit={}", cursor, limit);
     let r = block_on(do_http_get(build_uri(endpoint), &neon_config));
     handle_http_result(r).ok();
+}
+
+#[tokio::main]
+async fn perform_import_action(file:&String, delimiter:&String, neon_config: &NeonSession)  { 
+    let mut rdr = csv::Reader::from_path(file);
+    let mut rec = csv::ByteRecord::new();
+
+    //ok();
 }
 
 fn main() {
@@ -332,6 +347,10 @@ fn main() {
             let _p = project.unwrap_or("".to_string());
             let _o: String = operation.unwrap_or("".to_string());
             //perform_operations_action(&action, &p, &o, &config);
+        },
+        Action::Import { file, delimiter } => {
+            let _delim = delimiter.unwrap_or("".to_string());
+            perform_import_action(&file, &_delim, &config);
         },
     }
 }
