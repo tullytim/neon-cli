@@ -73,6 +73,7 @@ pub struct NeonSession {
     hostname: String,
     database: String,
     neon_api_key: String,
+    connect_string: String,
 }
 
 impl NeonSession {
@@ -83,13 +84,14 @@ impl NeonSession {
             hostname: String::from(""),
             database: String::from(""),
             neon_api_key: String::from(""),
+            connect_string: String::from(""),
         }
     }
 
     fn connect(&self) -> Result<postgres::Client, Box<dyn std::error::Error>> {
         let builder = SslConnector::builder(SslMethod::tls())?;
         let connector = MakeTlsConnector::new(builder.build());
-        let uri = format!("{}", self.database);
+        let uri = format!("{}", self.connect_string);
         println!("uri is {}", uri);
         let client = Client::connect(&uri, connector)?;
         Ok(client)
@@ -147,6 +149,7 @@ fn initialize_env() -> NeonSession {
         hostname: dotenv!("HOSTNAME").to_string(),
         database: dotenv!("DATABASE").to_string(),
         neon_api_key: dotenv!("NEON_API_KEY").to_string(),
+        connect_string: dotenv!("CONNECT_STRING").to_string(),
     };
     config
 }
@@ -212,13 +215,7 @@ async fn perform_projects_action(project: &String, neon_config: &NeonSession) {
 
 // tim@yoda neon-cli % target/debug/neon-cli branch -a list-roles -p white-voice-129396 -b br-dry-silence-599905
 #[tokio::main]
-async fn perform_branches_action(
-    action: &String,
-    project: &String,
-    branch: &String,
-    roles: &String,
-    neon_config: &NeonSession,
-) {
+async fn perform_branches_action(action: &String, project: &String, branch: &String, roles: &String, neon_config: &NeonSession) {
     if action == "list-roles" {
         let endpoint: String = format!("/projects/{}/branches/{}/roles", project, branch);
         let r = block_on(do_http_get(build_uri(endpoint), neon_config));
@@ -242,6 +239,10 @@ async fn perform_branches_action(
     } else if action == "database-details" {
         let endpoint: String = format!("/projects/{}/branches/{}/databases/{}", project, branch, neon_config.database);
         let r = block_on(do_http_get(build_uri(endpoint), neon_config));
+        let h: Result<(), serde_json::Error> = handle_http_result(r);
+    } else if action == "delete-branch" {
+        let endpoint: String = format!("/projects/{}/branches/{}", project, branch);
+        let r = block_on(do_http_delete(build_uri(endpoint), neon_config));
         let h: Result<(), serde_json::Error> = handle_http_result(r);
     }
 }
