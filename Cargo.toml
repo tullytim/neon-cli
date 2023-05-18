@@ -8,7 +8,7 @@ description = "A command-line tool for using the Neon serverless Postgres databa
 readme = "README.md"
 homepage = "https://github.com/tullytim/neon-cli"
 repository = "https://github.com/tullytim/neon-cli"
-keywords = ["neon", "database", "postgres", "postgresql", "cli", "search"]
+keywords = ["neon", "database", "postgres", "postgresql", "cli"]
 categories = ["command-line-utilities"]
 
 
