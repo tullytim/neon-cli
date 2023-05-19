@@ -86,14 +86,14 @@ enum Action {
         #[clap(short, long)]
         operation: Option<String>,
     },
-    #[clap(about = "Get information about endpoints in Neon.")]
+    #[clap(about = "Get information about consumption in Neon.")]
     Consumption {
         #[clap(short, long)]
         limit: Option<u32>,
         #[clap(short, long)]
         cursor: Option<String>,
     },
-    #[clap(about = "Get information about endpoints in Neon.")]
+    #[clap(about = "Import data from csv file (TEXT only for now).")]
     Import {
         #[clap(short, long)]
         file: String,
