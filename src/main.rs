@@ -9,12 +9,15 @@ use dotenv::dotenv;
 use futures::executor::block_on;
 use openssl::ssl::{SslConnector, SslMethod};
 use postgres::Client;
+use postgres::Statement;
+use postgres::types::ToSql;
 use postgres_openssl::MakeTlsConnector;
 use serde::Deserialize;
 use serde_json::to_string_pretty;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::{error::Error, io};
+use std::vec::Vec;
 mod neonutils;
 mod networking;
 use crate::neonutils::reflective_get;
@@ -130,6 +133,10 @@ impl NeonSession {
         let client = Client::connect(&uri, connector)?;
         Ok(client)
     }
+
+    fn drop(&mut self) {
+        println!("Dropping session");
+    }
 }
 
 struct Query {
@@ -137,11 +144,6 @@ struct Query {
 }
 
 impl Query {
-    fn new() -> Query {
-        Query {
-            query: String::from(""),
-        }
-    }
     //https://github.com/sfackler/rust-postgres/issues/858
     fn query(&self, mut client: postgres::Client) {
         println!("Executing query: {}", self.query);
@@ -298,12 +300,57 @@ async fn perform_consumption_action(limit:u32, cursor:&String, neon_config: &Neo
     handle_http_result(r).ok();
 }
 
-#[tokio::main]
-async fn perform_import_action(file:&String, delimiter:&String, neon_config: &NeonSession)  { 
-    let mut rdr = csv::Reader::from_path(file);
-    let mut rec = csv::ByteRecord::new();
+fn perform_import_action(file:&String, delimiter:&String, neon_config: &NeonSession) -> Result<(), Box<dyn Error>>  { 
+       //let r = tokio_postgres::connect("host=postgres://tim:Lw7cGrHsS4Tu@ep-autumn-sun-308519.us-west-2.aws.neon.tech dbname=neondb user=tim sslmode=require", tokio_postgres::NoTls).await;
+       /* 
+       let r = tokio_postgres::connect("host=ep-autumn-sun-308519.us-west-2.aws.neon.tech dbname=neondb user=tim password=Lw7cGrHsS4Tu sslmode=require", tokio_postgres::NoTls).await;
+    let (client, connection) = match r {
+        Ok((client, connection)) => (client, connection),
+        Err(e) => {
+            println!("connection error: {}", e);
+            return;
+        }
+    };
+*/
+    
+    println!("reading file {}", file);
+    let rdr = csv::Reader::from_path(file);
+    //let mut rec = csv::ByteRecord::new();
+    let mut rowcnt = 0;
+    let mut client = neon_config.connect().expect("couldn't connect");
+   
+    
+    for row in rdr.unwrap().records(){
+    //for row in rdr?.records(){
+        
 
-    //ok();
+
+        let r = row.unwrap();
+        let mut values:Vec<&(dyn ToSql + Sync)> = Vec::new();
+
+
+        //let t:&[&(dyn ToSql + Sync)] = row?.iter().map(|s| s as &(dyn ToSql + Sync)).collect::<Vec<_>>().as_slice();
+        /* 
+        let t = row.iter().map(
+            |s|  {
+                let temp = s as &(dyn ToSql + Sync);
+                temp
+            }
+        ).collect::<Vec<_>>().as_slice();
+        */
+
+        //let _res = client.execute("insert into foo values($1, $2, $3)", t).expect("condtn insert");
+
+        //println!("result is {:?}", _res);
+        values.push(&"asdf");
+        values.push(&"asdsafasdfdsafdf");
+        values.push(&12i32);
+        client.execute("insert into foo values($1, $2, $3)", &values).expect("condtn insert");
+
+		rowcnt += 1;
+    }
+    
+    Ok(())
 }
 
 fn main() {
