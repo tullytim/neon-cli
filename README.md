@@ -54,7 +54,7 @@ Executing query: select * from foo limit 2;
 ``` 
 
 # Configuration (.env file)
-Neon-cli uses a dotenv style setup and consumes the typical .env file you're used to.  Here is an example outlining all of the env vars neon-cli picks up:
+Neon-cli uses a dotenv style setup and consumes the typical .env file you're used to.  Here is an example outlining all of the env vars neon-cli picks up.  (Note that for now we are simply passing CONNECT_STRING in directly and ignore the other fields.  Will build that string out shortly.
 ```console
 HOSTNAME=a.b.com
 PORT=1234
