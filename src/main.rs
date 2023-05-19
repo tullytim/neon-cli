@@ -1,5 +1,5 @@
-#![allow(dead_code)]
-#![allow(unused_imports)]
+//#![allow(dead_code)]
+//#![allow(unused_imports)]
 //#![allow(unused_variables)]
 
 use clap::Parser;
@@ -8,23 +8,19 @@ use comfy_table::{modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL};
 use dotenv::dotenv;
 use futures::executor::block_on;
 use openssl::ssl::{SslConnector, SslMethod};
-use postgres::{Client, row};
-use postgres::Statement;
+use postgres::Client;
 use postgres::types::ToSql;
 use postgres_openssl::MakeTlsConnector;
 use serde::Deserialize;
 use serde_json::to_string_pretty;
 use serde_json::Value;
 use std::collections::HashMap;
-use std::{error::Error, io};
+use std::error::Error;
 use std::vec::Vec;
 mod neonutils;
 mod networking;
 use crate::neonutils::reflective_get;
 use crate::networking::{do_http_delete, do_http_get, do_http_post};
-use csv::StringRecord;
-use csv::StringRecordsIter;
-use std::fs::File;
 
 #[macro_use]
 extern crate dotenv_codegen;
@@ -108,16 +104,12 @@ enum Action {
 
 #[derive(Deserialize, Debug)]
 pub struct NeonSession {
-    user: String,
-    password: String,
-    hostname: String,
     database: String,
     neon_api_key: String,
     connect_string: String,
 }
 
 impl NeonSession {
-    
     fn new(connect_string: &String, user:&String, password:&String, hostname: &String, database: &String, neon_api_key: &String) -> NeonSession {
         let mut final_connect:String = String::from(connect_string);
         if final_connect.is_empty() {
@@ -127,9 +119,6 @@ impl NeonSession {
             );
         } 
         NeonSession {
-            user: user.clone(),
-            password: password.clone(),
-            hostname: hostname.clone(),
             database: database.clone(),
             neon_api_key: neon_api_key.clone(),
             connect_string: final_connect,

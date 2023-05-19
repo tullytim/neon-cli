@@ -1,5 +1,4 @@
-use reqwest::Client;
-use std::{error::Error, io};
+use std::error::Error;
 use crate::NeonSession;
 use std::collections::HashMap;
 
