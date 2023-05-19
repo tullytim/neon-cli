@@ -117,14 +117,22 @@ pub struct NeonSession {
 }
 
 impl NeonSession {
-    fn new() -> NeonSession {
+    
+    fn new(connect_string: &String, user:&String, password:&String, hostname: &String, database: &String, neon_api_key: &String) -> NeonSession {
+        let mut final_connect:String = String::from(connect_string);
+        if final_connect.is_empty() {
+            final_connect = format!(
+                "postgres://{}:{}@{}:5432/{}",
+                user, password, hostname, database
+            );
+        } 
         NeonSession {
-            user: String::from(""),
-            password: String::from(""),
-            hostname: String::from(""),
-            database: String::from(""),
-            neon_api_key: String::from(""),
-            connect_string: String::from(""),
+            user: user.clone(),
+            password: password.clone(),
+            hostname: hostname.clone(),
+            database: database.clone(),
+            neon_api_key: neon_api_key.clone(),
+            connect_string: final_connect,
         }
     }
 
@@ -135,10 +143,6 @@ impl NeonSession {
         println!("uri is {}", uri);
         let client = Client::connect(&uri, connector)?;
         Ok(client)
-    }
-
-    fn drop(&mut self) {
-        println!("Dropping session");
     }
 }
 
@@ -182,15 +186,9 @@ impl Query {
 }
 
 fn initialize_env() -> NeonSession {
-    let config = NeonSession {
-        user: dotenv!("USER").to_string(),
-        password: dotenv!("PASSWORD").to_string(),
-        hostname: dotenv!("HOSTNAME").to_string(),
-        database: dotenv!("DATABASE").to_string(),
-        neon_api_key: dotenv!("NEON_API_KEY").to_string(),
-        connect_string: dotenv!("CONNECT_STRING").to_string(),
-    };
-    config
+    let config = NeonSession::new(&dotenv!("CONNECT_STRING").to_string(), &dotenv!("USER").to_string(), &dotenv!("PASSWORD").to_string(), &dotenv!("HOSTNAME").to_string(), &dotenv!("DATABASE").to_string(), &dotenv!("NEON_API_KEY").to_string());
+    return config;
+    
 }
 
 fn build_uri(endpoint: String) -> String {
