@@ -8,7 +8,7 @@ use comfy_table::{modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL};
 use dotenv::dotenv;
 use futures::executor::block_on;
 use openssl::ssl::{SslConnector, SslMethod};
-use postgres::Client;
+use postgres::{Client, row};
 use postgres::Statement;
 use postgres::types::ToSql;
 use postgres_openssl::MakeTlsConnector;
@@ -22,6 +22,9 @@ mod neonutils;
 mod networking;
 use crate::neonutils::reflective_get;
 use crate::networking::{do_http_delete, do_http_get, do_http_post};
+use csv::StringRecord;
+use csv::StringRecordsIter;
+use std::fs::File;
 
 #[macro_use]
 extern crate dotenv_codegen;
@@ -300,56 +303,29 @@ async fn perform_consumption_action(limit:u32, cursor:&String, neon_config: &Neo
     handle_http_result(r).ok();
 }
 
-fn perform_import_action(file:&String, delimiter:&String, neon_config: &NeonSession) -> Result<(), Box<dyn Error>>  { 
-       //let r = tokio_postgres::connect("host=postgres://tim:Lw7cGrHsS4Tu@ep-autumn-sun-308519.us-west-2.aws.neon.tech dbname=neondb user=tim sslmode=require", tokio_postgres::NoTls).await;
-       /* 
-       let r = tokio_postgres::connect("host=ep-autumn-sun-308519.us-west-2.aws.neon.tech dbname=neondb user=tim password=Lw7cGrHsS4Tu sslmode=require", tokio_postgres::NoTls).await;
-    let (client, connection) = match r {
-        Ok((client, connection)) => (client, connection),
-        Err(e) => {
-            println!("connection error: {}", e);
-            return;
-        }
-    };
-*/
-    
-    println!("reading file {}", file);
-    let rdr = csv::Reader::from_path(file);
-    //let mut rec = csv::ByteRecord::new();
-    let mut rowcnt = 0;
-    let mut client = neon_config.connect().expect("couldn't connect");
-   
-    
-    for row in rdr.unwrap().records(){
-    //for row in rdr?.records(){
-        
-
-
-        let r = row.unwrap();
-        let mut values:Vec<&(dyn ToSql + Sync)> = Vec::new();
-
-
-        //let t:&[&(dyn ToSql + Sync)] = row?.iter().map(|s| s as &(dyn ToSql + Sync)).collect::<Vec<_>>().as_slice();
-        /* 
-        let t = row.iter().map(
-            |s|  {
-                let temp = s as &(dyn ToSql + Sync);
-                temp
-            }
-        ).collect::<Vec<_>>().as_slice();
-        */
-
-        //let _res = client.execute("insert into foo values($1, $2, $3)", t).expect("condtn insert");
-
-        //println!("result is {:?}", _res);
-        values.push(&"asdf");
-        values.push(&"asdsafasdfdsafdf");
-        values.push(&12i32);
-        client.execute("insert into foo values($1, $2, $3)", &values).expect("condtn insert");
-
-		rowcnt += 1;
+// assumes strings, will need to do some refactoring to support other types
+fn foo<'a>(t: &'a Vec<String>, client: &mut Client){
+    let mut values:Vec<&(dyn ToSql + Sync)> = Vec::new();
+    for i in 0..t.len() {
+        let b: &'a String  = &t[i];
+        println!("b: {}", b );
+        values.push(b as &(dyn ToSql + Sync));
     }
+    println!("values: {:?}", values);
+    client.execute("insert into foo values($1, $2, $3)", &values).expect("Couldn't insert");
+}
+
+fn perform_import_action(file:&String, delimiter:&String, neon_config: &NeonSession) -> Result<(), Box<dyn Error>>  { 
+    let rdr = csv::Reader::from_path(file);
+    let mut client = neon_config.connect().expect("couldn't connect");
     
+    let mut binding = rdr.unwrap();
+    let records = binding.records();
+    for row in records {
+        let record = row.unwrap();
+        let t:Vec<String> = record.iter().map(|x| x.to_string()).collect();
+        foo(&t, &mut client);
+    }
     Ok(())
 }
 
