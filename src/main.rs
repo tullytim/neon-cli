@@ -9,18 +9,14 @@ use core::panic;
 use dotenv::dotenv;
 use futures::executor::block_on;
 use openssl::ssl::{SslConnector, SslMethod};
-use postgres::types::ToSql;
-use postgres::Client;
+use postgres::{types::ToSql, Client};
 use postgres_openssl::MakeTlsConnector;
 use serde::Deserialize;
-use serde_json::to_string_pretty;
-use serde_json::Value;
-use std::collections::HashMap;
-use std::error::Error;
-use std::vec::Vec;
+use serde_json::{to_string_pretty, Value};
+use std::{collections::HashMap, error::Error, vec::Vec};
 mod neonutils;
 mod networking;
-use crate::neonutils::{reflective_get, ColumnType, TypeCheckable};
+use crate::neonutils::reflective_get;
 use crate::networking::{do_http_delete, do_http_get, do_http_post};
 
 #[macro_use]
@@ -96,6 +92,8 @@ enum Action {
     },
     #[clap(about = "Import data from csv file (TEXT only for now).")]
     Import {
+        #[clap(short, long)]
+        table: String,
         #[clap(short, long)]
         file: String,
         #[clap(short, long)]
@@ -202,7 +200,7 @@ fn handle_http_result(r: Result<String, Box<dyn Error>>) -> serde_json::Result<(
             println!("{}", formatted.unwrap());
         }
         Err(e) => {
-            println!("Error: {}", e);
+            panic!("Error: {}", e);
         }
     }
     Ok(())
@@ -342,55 +340,65 @@ async fn perform_operations_action(
     handle_http_result(r).ok();
 }
 
-// assumes strings, will need to do some refactoring to support other types
-/*
-fn insert_stringrecord<'a>(t: &'a Vec<String>, client: &mut Client){
-    let mut values:Vec<&(dyn ToSql + Sync)> = Vec::new();
-    for i in 0..t.len() {
-        let b: &'a String  = &t[i];
-        println!("b: {}", b );
-        values.push(b as &(dyn ToSql + Sync));
-    }
-    println!("values: {:?}", values);
-    client.execute("insert into foo values($1, $2, $3)", &values).expect("Couldn't insert");
-}*/
-
-fn detect_type(t: &dyn TypeCheckable) -> ColumnType {
-    return t.detect();
-}
-
-// in progress, only works on 3 column tables of TEXT.
-fn insert_stringrecord<'a>(t: &'a Vec<String>, client: &mut Client) {
-    let mut values: Vec<&(dyn ToSql + Sync)> = Vec::new();
-    for i in 0..t.len() {
-        let c: ColumnType = detect_type(&t[i]);
-        //println!("c: {:?}", c);
-        let b: &'a String = &t[i];
-        println!("b: {}", b);
-        values.push(b as &(dyn ToSql + Sync));
-    }
-    println!("values: {:?}", values);
-    client
-        .execute("insert into foo values($1, $2, $3)", &values)
-        .expect("Couldn't insert");
-}
-
 fn perform_import_action(
+    table: &String,
     file: &String,
     delimiter: &String,
     neon_config: &NeonSession,
 ) -> Result<(), Box<dyn Error>> {
+    let mut client = neon_config.connect().expect("couldn't connect");
+
+    // grab type so that when we insert from CSV later, we can parse from StringRecord properly before INSERTs run
+    let q = format!(
+        "SELECT column_name, data_type FROM information_schema.columns WHERE table_name = '{}';",
+        table
+    );
+    let res = client.query(&q, &[]).unwrap();
+    let mut column_types: Vec<String> = Vec::new();
+    // grab column types for each column (a row here is a column description)
+    for row in &res {
+        let col_type: String = row.get("data_type");
+        column_types.push(col_type);
+    }
+    println!("col types are {:?}", column_types);
+
     let rdr = csv::ReaderBuilder::new()
         .delimiter(delimiter.as_bytes()[0])
         .from_path(file);
-    let mut client = neon_config.connect().expect("couldn't connect");
-
     let mut binding = rdr.unwrap();
     let records = binding.records();
+
+    let mut params = Vec::<Box<dyn ToSql + Sync>>::new();
+
     for row in records {
         let record = row.unwrap();
-        let t: Vec<String> = record.iter().map(|x| x.to_string()).collect();
-        insert_stringrecord(&t, &mut client);
+        for i in 0..record.len() {
+            let ct = &column_types[i];
+            if ct == "text" {
+                let v = record[i].parse::<String>().unwrap();
+                params.push(Box::new(v));
+            } else if ct == "integer" {
+                let v = record[i].parse::<i32>().unwrap();
+                params.push(Box::new(v));
+            } else if ct == "real" {
+                let v:f64 = record[i].parse::<f64>().unwrap();
+                params.push(Box::new(v));
+            } 
+            else {
+                panic!("Unknown column type: {}", ct);
+            }
+        }
+
+        let q = format!("insert into {} values($1, $2, $3)", table);
+
+        let zz = params
+            .iter()
+            .map(|x: &Box<dyn ToSql + Sync>| &**x)
+            .collect::<Vec<_>>();
+
+        client.execute(&q, &zz).expect("Couldn't insert");
+
+        params.clear();
     }
     Ok(())
 }
@@ -450,9 +458,13 @@ fn main() {
             let o: String = operation.unwrap_or("".to_string());
             perform_operations_action(&action, &p, &o, &config);
         }
-        Action::Import { file, delimiter } => {
+        Action::Import {
+            table,
+            file,
+            delimiter,
+        } => {
             let _delim = delimiter.unwrap_or(",".to_string());
-            perform_import_action(&file, &_delim, &config).unwrap();
+            perform_import_action(&table, &file, &_delim, &config).unwrap();
         }
     }
 }

@@ -47,26 +47,3 @@ pub fn reflective_get(row: &postgres::Row, index: usize) -> String {
     };
     value.unwrap_or("".to_string())
 }
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ColumnType {
-    String,
-    U32
-}
-
-pub trait TypeCheckable{
-    fn detect(&self) -> ColumnType;
-}
-
-impl TypeCheckable for String  {
-    fn detect(&self) -> ColumnType {
-        println!("It is a string!");
-        return ColumnType::String;
-    }
-}
-impl TypeCheckable for u32  {
-    fn detect(&self) -> ColumnType {
-        println!("It is a u32!");
-        return ColumnType::U32;
-    }
-}
