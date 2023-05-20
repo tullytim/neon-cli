@@ -1,6 +1,6 @@
 [package]
 name = "neon-cli"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["Tim Tully <tim@menlovc.com>"]
 license = "MIT OR Apache-2.0"
@@ -10,7 +10,6 @@ homepage = "https://github.com/tullytim/neon-cli"
 repository = "https://github.com/tullytim/neon-cli"
 keywords = ["neon", "database", "postgres", "postgresql", "cli"]
 categories = ["command-line-utilities"]
-
 
 [dependencies]
 app = "0.6.5"

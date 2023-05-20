@@ -5,11 +5,12 @@
 use clap::Parser;
 use comfy_table::*;
 use comfy_table::{modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL};
+use core::panic;
 use dotenv::dotenv;
 use futures::executor::block_on;
 use openssl::ssl::{SslConnector, SslMethod};
-use postgres::Client;
 use postgres::types::ToSql;
+use postgres::Client;
 use postgres_openssl::MakeTlsConnector;
 use serde::Deserialize;
 use serde_json::to_string_pretty;
@@ -19,7 +20,7 @@ use std::error::Error;
 use std::vec::Vec;
 mod neonutils;
 mod networking;
-use crate::neonutils::reflective_get;
+use crate::neonutils::{reflective_get, ColumnType, TypeCheckable};
 use crate::networking::{do_http_delete, do_http_get, do_http_post};
 
 #[macro_use]
@@ -99,7 +100,7 @@ enum Action {
         file: String,
         #[clap(short, long)]
         delimiter: Option<String>,
-    }
+    },
 }
 
 #[derive(Deserialize, Debug)]
@@ -110,14 +111,21 @@ pub struct NeonSession {
 }
 
 impl NeonSession {
-    fn new(connect_string: &String, user:&String, password:&String, hostname: &String, database: &String, neon_api_key: &String) -> NeonSession {
-        let mut final_connect:String = String::from(connect_string);
+    fn new(
+        connect_string: &String,
+        user: &String,
+        password: &String,
+        hostname: &String,
+        database: &String,
+        neon_api_key: &String,
+    ) -> NeonSession {
+        let mut final_connect: String = String::from(connect_string);
         if final_connect.is_empty() {
             final_connect = format!(
                 "postgres://{}:{}@{}:5432/{}",
                 user, password, hostname, database
             );
-        } 
+        }
         NeonSession {
             database: database.clone(),
             neon_api_key: neon_api_key.clone(),
@@ -151,7 +159,7 @@ impl Query {
             .load_preset(UTF8_FULL)
             .apply_modifier(UTF8_ROUND_CORNERS)
             .set_content_arrangement(ContentArrangement::Dynamic)
-            .set_header(vec!["Header1"]);
+            .set_header(vec!["Header"]);
 
         for row in &res {
             if !saw_first_row {
@@ -168,16 +176,18 @@ impl Query {
         }
         println!("{table}");
     }
-    fn execute(&self, mut client: postgres::Client) {
-        println!("Executing query: {}", self.query);
-        let _res = client.batch_execute(&self.query).unwrap();
-    }
 }
 
 fn initialize_env() -> NeonSession {
-    let config = NeonSession::new(&dotenv!("CONNECT_STRING").to_string(), &dotenv!("USER").to_string(), &dotenv!("PASSWORD").to_string(), &dotenv!("HOSTNAME").to_string(), &dotenv!("DATABASE").to_string(), &dotenv!("NEON_API_KEY").to_string());
+    let config = NeonSession::new(
+        &dotenv!("CONNECT_STRING").to_string(),
+        &dotenv!("USER").to_string(),
+        &dotenv!("PASSWORD").to_string(),
+        &dotenv!("HOSTNAME").to_string(),
+        &dotenv!("DATABASE").to_string(),
+        &dotenv!("NEON_API_KEY").to_string(),
+    );
     return config;
-    
 }
 
 fn build_uri(endpoint: String) -> String {
@@ -200,7 +210,7 @@ fn handle_http_result(r: Result<String, Box<dyn Error>>) -> serde_json::Result<(
 
 #[tokio::main]
 async fn perform_keys_action(action: &String, name: &String, neon_config: &NeonSession) {
-    let mut r:Result<String, Box<dyn Error>> = Ok("".to_string());
+    let r: Result<String, Box<dyn Error>>;
     match action {
         s if s == "list" => {
             let uri = build_uri("/api_keys".to_string());
@@ -217,7 +227,7 @@ async fn perform_keys_action(action: &String, name: &String, neon_config: &NeonS
             r = block_on(do_http_delete(uri, &neon_config));
         }
         _ => {
-            println!("unknown action");
+            panic!("Unknown Keys action");
         }
     }
     handle_http_result(r).ok();
@@ -225,24 +235,33 @@ async fn perform_keys_action(action: &String, name: &String, neon_config: &NeonS
 
 #[tokio::main]
 async fn perform_projects_action(action: &String, project: &String, neon_config: &NeonSession) {
-    let mut r:Result<String, Box<dyn Error>> = Ok("".to_string());
+    let r: Result<String, Box<dyn Error>>;
     if action == "list-projects" {
         let uri = build_uri("/projects".to_string());
         r = block_on(do_http_get(uri, neon_config));
-    } else if action == "project-details" { // target/debug/neon-cli projects -a project-details -p white-voice-129396
+    } else if action == "project-details" {
+        // target/debug/neon-cli projects -a project-details -p white-voice-129396
         let uri = build_uri(format!("/projects/{}", project));
         r = block_on(do_http_get(uri, neon_config));
     } else if action == "delete-project" {
         let uri = build_uri(format!("/projects/{}", project));
         r = block_on(do_http_delete(uri, neon_config));
+    } else {
+        panic!("Unknown Project Action: {}", action);
     }
     handle_http_result(r).ok();
 }
 
 // tim@yoda neon-cli % target/debug/neon-cli branch -a list-roles -p white-voice-129396 -b br-dry-silence-599905
 #[tokio::main]
-async fn perform_branches_action(action: &String, project: &String, branch: &String, roles: &String, neon_config: &NeonSession) {
-    let mut r:Result<String, Box<dyn Error>> = Ok("".to_string());
+async fn perform_branches_action(
+    action: &String,
+    project: &String,
+    branch: &String,
+    _roles: &String,
+    neon_config: &NeonSession,
+) {
+    let mut r: Result<String, Box<dyn Error>> = Ok("".to_string());
     if action == "list-roles" {
         let endpoint: String = format!("/projects/{}/branches/{}/roles", project, branch);
         r = block_on(do_http_get(build_uri(endpoint), &neon_config));
@@ -259,7 +278,10 @@ async fn perform_branches_action(action: &String, project: &String, branch: &Str
         let endpoint: String = format!("/projects/{}/branches/{}/databases", project, branch);
         r = block_on(do_http_get(build_uri(endpoint), &neon_config));
     } else if action == "database-details" {
-        let endpoint: String = format!("/projects/{}/branches/{}/databases/{}", project, branch, neon_config.database);
+        let endpoint: String = format!(
+            "/projects/{}/branches/{}/databases/{}",
+            project, branch, neon_config.database
+        );
         r = block_on(do_http_get(build_uri(endpoint), &neon_config));
     } else if action == "delete-branch" {
         let endpoint: String = format!("/projects/{}/branches/{}", project, branch);
@@ -269,29 +291,60 @@ async fn perform_branches_action(action: &String, project: &String, branch: &Str
     handle_http_result(r).ok();
 }
 
-
 #[tokio::main]
-async fn perform_endpoints_action(action: &String, project: &String, endpoint: &String, neon_config: &NeonSession) {
-    let mut r:Result<String, Box<dyn Error>> = Ok("".to_string());
-    if action == "list-endpoints" { // target/debug/neon-cli endpoints -a list-endpoints -p white-voice-129396
+async fn perform_endpoints_action(
+    action: &String,
+    project: &String,
+    endpoint: &String,
+    neon_config: &NeonSession,
+) {
+    let r: Result<String, Box<dyn Error>>;
+    if action == "list-endpoints" {
+        // target/debug/neon-cli endpoints -a list-endpoints -p white-voice-129396
         let endpoint: String = format!("/projects/{}/endpoints", project);
         r = block_on(do_http_get(build_uri(endpoint), &neon_config));
     } else if action == "endpoint-details" {
         let endpoint: String = format!("/projects/{}/endpoints/{}", project, endpoint);
         r = block_on(do_http_get(build_uri(endpoint), &neon_config));
+    } else {
+        panic!("Unknown Endpoints Action: {}", action);
     }
     handle_http_result(r).ok();
 }
 
 #[tokio::main]
-async fn perform_consumption_action(limit:u32, cursor:&String, neon_config: &NeonSession) { 
+async fn perform_consumption_action(limit: u32, cursor: &String, neon_config: &NeonSession) {
     let endpoint: String = format!("/consumption/projects?cursor={}&limit={}", cursor, limit);
     let r = block_on(do_http_get(build_uri(endpoint), &neon_config));
     handle_http_result(r).ok();
 }
 
+#[tokio::main]
+async fn perform_operations_action(
+    action: &String,
+    project: &String,
+    operation: &String,
+    neon_config: &NeonSession,
+) {
+    let r: Result<String, Box<dyn Error>>;
+    if action == "list-operations" {
+        let endpoint: String = format!("/projects/{}/operations", project);
+        r = block_on(do_http_get(build_uri(endpoint), &neon_config));
+    } else if action == "operation-details" {
+        if operation.is_empty() {
+            panic!("Operation ID is required");
+        }
+        let endpoint: String = format!("/projects/{}/operations/{}", project, operation);
+        r = block_on(do_http_get(build_uri(endpoint), &neon_config));
+    } else {
+        panic!("Unknown Operation Action: {}", action);
+    }
+    handle_http_result(r).ok();
+}
+
 // assumes strings, will need to do some refactoring to support other types
-fn foo<'a>(t: &'a Vec<String>, client: &mut Client){
+/*
+fn insert_stringrecord<'a>(t: &'a Vec<String>, client: &mut Client){
     let mut values:Vec<&(dyn ToSql + Sync)> = Vec::new();
     for i in 0..t.len() {
         let b: &'a String  = &t[i];
@@ -300,18 +353,44 @@ fn foo<'a>(t: &'a Vec<String>, client: &mut Client){
     }
     println!("values: {:?}", values);
     client.execute("insert into foo values($1, $2, $3)", &values).expect("Couldn't insert");
+}*/
+
+fn detect_type(t: &dyn TypeCheckable) -> ColumnType {
+    return t.detect();
 }
 
-fn perform_import_action(file:&String, delimiter:&String, neon_config: &NeonSession) -> Result<(), Box<dyn Error>>  { 
-    let rdr = csv::Reader::from_path(file);
+// in progress, only works on 3 column tables of TEXT.
+fn insert_stringrecord<'a>(t: &'a Vec<String>, client: &mut Client) {
+    let mut values: Vec<&(dyn ToSql + Sync)> = Vec::new();
+    for i in 0..t.len() {
+        let c: ColumnType = detect_type(&t[i]);
+        //println!("c: {:?}", c);
+        let b: &'a String = &t[i];
+        println!("b: {}", b);
+        values.push(b as &(dyn ToSql + Sync));
+    }
+    println!("values: {:?}", values);
+    client
+        .execute("insert into foo values($1, $2, $3)", &values)
+        .expect("Couldn't insert");
+}
+
+fn perform_import_action(
+    file: &String,
+    delimiter: &String,
+    neon_config: &NeonSession,
+) -> Result<(), Box<dyn Error>> {
+    let rdr = csv::ReaderBuilder::new()
+        .delimiter(delimiter.as_bytes()[0])
+        .from_path(file);
     let mut client = neon_config.connect().expect("couldn't connect");
-    
+
     let mut binding = rdr.unwrap();
     let records = binding.records();
     for row in records {
         let record = row.unwrap();
-        let t:Vec<String> = record.iter().map(|x| x.to_string()).collect();
-        foo(&t, &mut client);
+        let t: Vec<String> = record.iter().map(|x| x.to_string()).collect();
+        insert_stringrecord(&t, &mut client);
     }
     Ok(())
 }
@@ -337,30 +416,43 @@ fn main() {
             let name = name.unwrap_or("".to_string()); // name of the key to create
             perform_keys_action(&action, &name, &config);
         }
-        Action::Branch {action, project, branch, roles} => {
+        Action::Branch {
+            action,
+            project,
+            branch,
+            roles,
+        } => {
             let p = project.unwrap_or("".to_string());
             let b: String = branch.unwrap_or("".to_string());
             let r: String = roles.unwrap_or("".to_string());
             perform_branches_action(&action, &p, &b, &r, &config);
-        },
-        Action::Endpoints { action, project, endpoint } => {
+        }
+        Action::Endpoints {
+            action,
+            project,
+            endpoint,
+        } => {
             let p = project.unwrap_or("".to_string());
             let e: String = endpoint.unwrap_or("".to_string());
             perform_endpoints_action(&action, &p, &e, &config);
-        },
+        }
         Action::Consumption { limit, cursor } => {
             let limit = limit.unwrap_or(16);
             let cursor: String = cursor.unwrap_or("".to_string());
             perform_consumption_action(limit, &cursor, &config);
-        },
-        Action::Operations { action, project, operation } => {
-            let _p = project.unwrap_or("".to_string());
-            let _o: String = operation.unwrap_or("".to_string());
-            //perform_operations_action(&action, &p, &o, &config);
-        },
+        }
+        Action::Operations {
+            action,
+            project,
+            operation,
+        } => {
+            let p = project.expect("Project ID is required for operations");
+            let o: String = operation.unwrap_or("".to_string());
+            perform_operations_action(&action, &p, &o, &config);
+        }
         Action::Import { file, delimiter } => {
-            let _delim = delimiter.unwrap_or("".to_string());
-            perform_import_action(&file, &_delim, &config);
-        },
+            let _delim = delimiter.unwrap_or(",".to_string());
+            perform_import_action(&file, &_delim, &config).unwrap();
+        }
     }
 }
