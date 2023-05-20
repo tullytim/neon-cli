@@ -7,8 +7,8 @@ Neon-CLI is a Rust Crate providing the binary for a command line interface to th
 # Usage
 Using the CLI is based on commands.  Use 'neon-cli' and pass it a command (query, projects, keys, etc) to direct aspect of Neon.  Each command takes a varying set of arguments.
 ```console
-% neon-cli --help      
-Does awesome things
+% neon-cli 
+Neon Postgres Database CLI
 
 Usage: neon-cli [OPTIONS] <COMMAND>
 
@@ -19,7 +19,8 @@ Commands:
   branch       Get information about branches in Neon.
   endpoints    Get information about endpoints in Neon.
   operations   Get information about operations in Neon.
-  consumption  Get information about endpoints in Neon.
+  consumption  Get information about consumption in Neon.
+  import       Import data from csv file (TEXT only for now).
   help         Print this message or the help of the given subcommand(s)
 
 Options:
