@@ -360,23 +360,17 @@ fn perform_import_action(
         let col_type: String = row.get("data_type");
         column_types.push(col_type);
     }
-    println!("col types are {:?}", column_types);
 
     let rdr = csv::ReaderBuilder::new()
         .delimiter(delimiter.as_bytes()[0])
         .from_path(file);
     let mut binding = rdr.unwrap();
     let records = binding.records();
-
     let mut params = Vec::<Box<dyn ToSql + Sync>>::new();
-
-    let range = 1..=3; // Create a range from start to end (inclusive)
-
-    //let mapped_values: Vec<String> = range.map(|i| format!("${}", i)).collect();
+    let range = 1..=column_types.len(); // Create a range from start to end (inclusive)
     let mapped_values: String = range.map(|i| format!("${}", i)).collect::<Vec<String>>().join(",");
-    println!("{}", mapped_values);
 
-    let q = format!("insert into {} values($1, $2, $3)", table);
+    let q = format!("insert into {} values({})", table, mapped_values);
 
     for row in records {
         let record = row.unwrap();
@@ -396,7 +390,6 @@ fn perform_import_action(
                 panic!("Unknown column type: {}", ct);
             }
         }
-
 
         let zz = params
             .iter()
