@@ -58,6 +58,17 @@ Executing query: select * from foo limit 2;
 To import a CSV file, use:
 ```console
 
+% neon-cli import --help
+Import data from csv file (TEXT only for now).
+
+Usage: neon-cli import [OPTIONS] --table <TABLE> --file <FILE>
+
+Options:
+  -t, --table <TABLE>          
+  -f, --file <FILE>            
+  -d, --delimiter <DELIMITER>  
+  -h, --help                   Print help
+
 % cat foo.csv
 col1,col2,col3
 it,works,100
