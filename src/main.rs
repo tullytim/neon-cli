@@ -38,14 +38,21 @@ enum Action {
     #[clap(about = "Execute a query")]
     Query {
         #[clap(short, long)]
+        #[arg(help = String::from("SQL query string to execute."))]
         sql: String,
     },
     #[clap(about = "Get information about projects in Neon.")]
     Projects {
         #[clap(short, long)]
+        #[arg(help = String::from("Format output for the projects. Can be one of \"list-projects\", \"project-details\", \"delete-project\""))]
         action: String,
         #[clap(short, long)]
+        #[arg(help = String::from("The project identifier to use in the operation, if any. list-projects does not use this arg."))]
         project: Option<String>,
+        #[clap(short, long)]
+        #[arg(default_value_t = String::from("json"))]
+        #[arg(help = String::from("Format output for the projects. Can be one of \"json\" or \"table\""))]
+        format: String,
     },
     #[clap(about = "Get information about keys in Neon.")]
     Keys {
@@ -59,8 +66,10 @@ enum Action {
         #[clap(short, long)]
         action: String,
         #[clap(short, long)]
+        #[arg(help = String::from("Project the branch belongs to."))]
         project: Option<String>,
         #[clap(short, long)]
+        #[arg(help = String::from("Branch to get data for."))]
         branch: Option<String>,
         #[clap(short, long)]
         roles: Option<String>,
@@ -77,26 +86,34 @@ enum Action {
     #[clap(about = "Get information about operations in Neon.")]
     Operations {
         #[clap(short, long)]
+        #[arg(help = String::from("Action to be performed. Can be one of \"list-operations\" or \"operation-details\"."))]
         action: String,
         #[clap(short, long)]
+        #[arg(help = String::from("Project id to get operations for."))]
         project: Option<String>,
         #[clap(short, long)]
+        #[arg(help = String::from("Identifier for an operation to get data for."))]
         operation: Option<String>,
     },
     #[clap(about = "Get information about consumption in Neon.")]
     Consumption {
         #[clap(short, long)]
+        #[arg(help = String::from("Pagination limit for the report."))]
         limit: Option<u32>,
         #[clap(short, long)]
+        #[arg(help = String::from("Cursor value used for next page in pagination."))]
         cursor: Option<String>,
     },
     #[clap(about = "Import data from csv file (TEXT only for now).")]
     Import {
         #[clap(short, long)]
+        #[arg(help = String::from("The table to load data into."))]
         table: String,
         #[clap(short, long)]
+        #[arg(help = String::from("The CSV file from while to load data. Ensure you have a header row at the top."))]
         file: String,
         #[clap(short, long)]
+        #[arg(help = String::from("Delimiter used in the row.  Default is ','."))]
         delimiter: Option<String>,
     },
 }
@@ -135,7 +152,7 @@ impl NeonSession {
         let builder = SslConnector::builder(SslMethod::tls())?;
         let connector = MakeTlsConnector::new(builder.build());
         let uri = format!("{}", self.connect_string);
-        println!("uri is {}", uri);
+        println!("uri is {uri}");
         let client = Client::connect(&uri, connector)?;
         Ok(client)
     }
@@ -176,6 +193,12 @@ impl Query {
     }
 }
 
+impl Drop for Query {
+    fn drop(&mut self) {
+        println!("dropping query");
+    }
+}
+
 fn initialize_env() -> NeonSession {
     let config = NeonSession::new(
         &dotenv!("CONNECT_STRING").to_string(),
@@ -192,11 +215,12 @@ fn build_uri(endpoint: String) -> String {
     format!("{}{}", NEON_BASE_URL.to_string(), endpoint)
 }
 
+// String in the Result is unformatted JSON (non-pretty).
 fn handle_http_result(r: Result<String, Box<dyn Error>>) -> serde_json::Result<()> {
     match r {
         Ok(s) => {
             let json_blob: Value = serde_json::from_str(&s)?;
-            let formatted = to_string_pretty(&json_blob);
+            let formatted: Result<String, serde_json::Error> = to_string_pretty(&json_blob);
             println!("{}", formatted.unwrap());
         }
         Err(e) => {
@@ -232,7 +256,12 @@ async fn perform_keys_action(action: &String, name: &String, neon_config: &NeonS
 }
 
 #[tokio::main]
-async fn perform_projects_action(action: &String, project: &String, neon_config: &NeonSession) {
+async fn perform_projects_action(
+    action: &String,
+    project: &String,
+    format: &String,
+    neon_config: &NeonSession,
+) {
     let r: Result<String, Box<dyn Error>>;
     if action == "list-projects" {
         let uri = build_uri("/projects".to_string());
@@ -245,9 +274,38 @@ async fn perform_projects_action(action: &String, project: &String, neon_config:
         let uri = build_uri(format!("/projects/{}", project));
         r = block_on(do_http_delete(uri, neon_config));
     } else {
-        panic!("Unknown Project Action: {}", action);
+        panic!("Unknown Project Action: {action}");
     }
-    handle_http_result(r).ok();
+
+    if format.is_empty() || format == "json" {
+        handle_http_result(r).ok();
+    } else if format == "table" {
+        let json_blob: Value = serde_json::from_str(&r.unwrap()).unwrap();
+        let mut table = Table::new();
+        table
+            .load_preset(UTF8_FULL)
+            .apply_modifier(UTF8_ROUND_CORNERS)
+            .set_content_arrangement(ContentArrangement::Dynamic);
+        let mut saw_first_row = false;
+        let projects = json_blob["projects"].as_array().unwrap();
+
+        for project in projects {
+            for (key, value) in project.as_object().unwrap() {
+                if !saw_first_row {
+                    let col_names: Vec<String> =
+                    project.as_object().unwrap().iter().map(|c| c.0.to_string()).collect::<Vec<String>>();
+                    table.set_header(col_names);
+                    saw_first_row = true;
+                }
+            }
+            //let row_strs: Vec<String> = project.as_object().unwrap().iter().map(|c| c.1.to_string()).collect::<Vec<String>>();
+            let row_strs: Vec<String> = project.as_object().unwrap().iter().map(|c| c.1.to_string()).collect::<Vec<String>>();
+            table.add_row(row_strs);
+        }
+        println!("{table}");
+    } else {
+        panic!("Unknown format: {}", format);
+    }
 }
 
 // tim@yoda neon-cli % target/debug/neon-cli branch -a list-roles -p white-voice-129396 -b br-dry-silence-599905
@@ -368,9 +426,12 @@ fn perform_import_action(
     let records = binding.records();
     let mut params = Vec::<Box<dyn ToSql + Sync>>::new();
     let range = 1..=column_types.len(); // Create a range from start to end (inclusive)
-    let mapped_values: String = range.map(|i| format!("${}", i)).collect::<Vec<String>>().join(",");
+    let mapped_values: String = range
+        .map(|i| format!("${}", i))
+        .collect::<Vec<String>>()
+        .join(",");
 
-    let q = format!("insert into {} values({})", table, mapped_values);
+    let q = format!("insert into {table} values({mapped_values})");
 
     for row in records {
         let record = row.unwrap();
@@ -383,10 +444,9 @@ fn perform_import_action(
                 let v = record[i].parse::<i32>().unwrap();
                 params.push(Box::new(v));
             } else if ct == "real" {
-                let v:f64 = record[i].parse::<f64>().unwrap();
+                let v: f64 = record[i].parse::<f64>().unwrap();
                 params.push(Box::new(v));
-            } 
-            else {
+            } else {
                 panic!("Unknown column type: {}", ct);
             }
         }
@@ -416,9 +476,13 @@ fn main() {
             let q: Query = Query { query: sql };
             q.query(c);
         }
-        Action::Projects { action, project } => {
+        Action::Projects {
+            action,
+            project,
+            format,
+        } => {
             let p = project.unwrap_or("".to_string()); // project id
-            perform_projects_action(&action, &p, &config)
+            perform_projects_action(&action, &p, &format, &config)
         }
         Action::Keys { action, name } => {
             let name = name.unwrap_or("".to_string()); // name of the key to create
