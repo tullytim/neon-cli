@@ -370,6 +370,14 @@ fn perform_import_action(
 
     let mut params = Vec::<Box<dyn ToSql + Sync>>::new();
 
+    let range = 1..=3; // Create a range from start to end (inclusive)
+
+    //let mapped_values: Vec<String> = range.map(|i| format!("${}", i)).collect();
+    let mapped_values: String = range.map(|i| format!("${}", i)).collect::<Vec<String>>().join(",");
+    println!("{}", mapped_values);
+
+    let q = format!("insert into {} values($1, $2, $3)", table);
+
     for row in records {
         let record = row.unwrap();
         for i in 0..record.len() {
@@ -389,7 +397,6 @@ fn perform_import_action(
             }
         }
 
-        let q = format!("insert into {} values($1, $2, $3)", table);
 
         let zz = params
             .iter()
