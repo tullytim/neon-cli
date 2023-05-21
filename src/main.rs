@@ -391,12 +391,12 @@ fn perform_import_action(
             }
         }
 
-        let zz = params
+        let param_values: Vec<&(dyn ToSql + Sync)> = params
             .iter()
             .map(|x: &Box<dyn ToSql + Sync>| &**x)
             .collect::<Vec<_>>();
 
-        client.execute(&q, &zz).expect("Couldn't insert");
+        client.execute(&q, &param_values).expect("Couldn't insert");
 
         params.clear();
     }
