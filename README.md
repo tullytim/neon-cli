@@ -54,6 +54,29 @@ Executing query: select * from foo limit 2;
 ╰──────┴───────┴────────╯
 ``` 
 
+# Importing Data
+To import a CSV file, use:
+```console
+
+% neon-cli import --help
+Import data from csv file (TEXT only for now).
+
+Usage: neon-cli import [OPTIONS] --table <TABLE> --file <FILE>
+
+Options:
+  -t, --table <TABLE>          
+  -f, --file <FILE>            
+  -d, --delimiter <DELIMITER>  
+  -h, --help                   Print help
+
+% cat foo.csv
+col1,col2,col3
+it,works,100
+this,is,42
+
+% neon-cli import -f foo.csv -t foo
+```
+
 # Configuration (.env file)
 Neon-cli uses a dotenv style setup and consumes the typical .env file you're used to.  Here is an example outlining all of the env vars neon-cli picks up.  If CONNECT_STRING exists, that will be used.  Otherwise CONNECT_STRING is built out of HOSTNAME, PORT, etc:
 ```console
