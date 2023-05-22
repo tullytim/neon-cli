@@ -16,7 +16,7 @@ use serde_json::{to_string_pretty, Value};
 use std::{collections::HashMap, error::Error, vec::Vec};
 mod neonutils;
 mod networking;
-use crate::neonutils::{reflective_get, print_generic_json_table};
+use crate::neonutils::{print_generic_json_table, reflective_get};
 use crate::networking::{do_http_delete, do_http_get, do_http_post};
 
 #[macro_use]
@@ -100,6 +100,10 @@ enum Action {
         #[clap(short, long)]
         #[arg(help = String::from("Identifier for an operation to get data for."))]
         operation: Option<String>,
+        #[clap(short, long)]
+        #[arg(default_value_t = String::from("json"))]
+        #[arg(help = String::from("Format output for the keys. Can be one of \"json\" or \"table\""))]
+        format: String,
     },
     #[clap(about = "Get information about consumption in Neon.")]
     Consumption {
@@ -142,10 +146,7 @@ impl NeonSession {
     ) -> NeonSession {
         let mut final_connect: String = String::from(connect_string);
         if final_connect.is_empty() {
-            final_connect = format!(
-                "postgres://{}:{}@{}:5432/{}",
-                user, password, hostname, database
-            );
+            final_connect = format!("postgres://{user}:{password}@{hostname}:5432/{database}");
         }
         NeonSession {
             database: database.clone(),
@@ -200,8 +201,7 @@ impl Query {
 }
 
 impl Drop for Query {
-    fn drop(&mut self) {
-    }
+    fn drop(&mut self) {}
 }
 
 fn initialize_env() -> NeonSession {
@@ -236,7 +236,12 @@ fn handle_http_result(r: Result<String, Box<dyn Error>>) -> serde_json::Result<(
 }
 
 #[tokio::main]
-async fn perform_keys_action(action: &String, name: &String, format:&String, neon_config: &NeonSession) {
+async fn perform_keys_action(
+    action: &String,
+    name: &String,
+    format: &String,
+    neon_config: &NeonSession,
+) {
     let r: Result<String, Box<dyn Error>>;
     match action {
         s if s == "list" => {
@@ -257,15 +262,17 @@ async fn perform_keys_action(action: &String, name: &String, format:&String, neo
             panic!("Unknown Keys action");
         }
     }
+
     if format.is_empty() || format == "json" {
         handle_http_result(r).ok();
     } else if format == "table" {
         let json_str = r.unwrap();
-        let parsed_array:Vec<Value> = serde_json::from_str(json_str.as_str()).unwrap();
+        let parsed_array: Vec<Value> = serde_json::from_str(json_str.as_str()).unwrap();
         print_generic_json_table(&parsed_array);
     } else {
         panic!("Unknown format: {format}");
-    }}
+    }
+}
 
 #[tokio::main]
 async fn perform_projects_action(
@@ -280,24 +287,15 @@ async fn perform_projects_action(
         r = block_on(do_http_get(uri, neon_config));
     } else if action == "project-details" {
         // target/debug/neon-cli projects -a project-details -p white-voice-129396
-        let uri = build_uri(format!("/projects/{}", project));
+        let uri = build_uri(format!("/projects/{project}"));
         r = block_on(do_http_get(uri, neon_config));
     } else if action == "delete-project" {
-        let uri = build_uri(format!("/projects/{}", project));
+        let uri = build_uri(format!("/projects/{project}"));
         r = block_on(do_http_delete(uri, neon_config));
     } else {
         panic!("Unknown Project Action: {action}");
     }
-
-    if format.is_empty() || format == "json" {
-        handle_http_result(r).ok();
-    } else if format == "table" {
-        let json_blob: Value = serde_json::from_str(&r.unwrap()).unwrap();
-        let projects = json_blob["projects"].as_array().unwrap();
-        print_generic_json_table(projects);
-    } else {
-        panic!("Unknown format: {format}");
-    }
+    handle_formatting_output(r, format, "projects");
 }
 
 // tim@yoda neon-cli % target/debug/neon-cli branch -a list-roles -p white-voice-129396 -b br-dry-silence-599905
@@ -311,28 +309,26 @@ async fn perform_branches_action(
 ) {
     let mut r: Result<String, Box<dyn Error>> = Ok("".to_string());
     if action == "list-roles" {
-        let endpoint: String = format!("/projects/{}/branches/{}/roles", project, branch);
+        let endpoint: String = format!("/projects/{project}/branches/{branch}/roles");
         r = block_on(do_http_get(build_uri(endpoint), &neon_config));
     } else if action == "list-endpoints" {
-        let endpoint: String = format!("/projects/{}/branches/{}/endpoints", project, branch);
+        let endpoint: String = format!("/projects/{project}/branches/{branch}/endpoints");
         r = block_on(do_http_get(build_uri(endpoint), &neon_config));
     } else if action == "list-branches" {
-        let endpoint: String = format!("/projects/{}/branches", project);
+        let endpoint: String = format!("/projects/{project}/branches");
         r = block_on(do_http_get(build_uri(endpoint), &neon_config));
     } else if action == "branch-details" {
-        let endpoint: String = format!("/projects/{}/branches/{}", project, branch);
+        let endpoint: String = format!("/projects/{project}/branches/{branch}");
         r = block_on(do_http_get(build_uri(endpoint), &neon_config));
     } else if action == "list-databases" {
-        let endpoint: String = format!("/projects/{}/branches/{}/databases", project, branch);
+        let endpoint: String = format!("/projects/{project}/branches/{branch}/databases");
         r = block_on(do_http_get(build_uri(endpoint), &neon_config));
     } else if action == "database-details" {
-        let endpoint: String = format!(
-            "/projects/{}/branches/{}/databases/{}",
-            project, branch, neon_config.database
+        let endpoint: String = format!("/projects/{project}/branches/{branch}/databases/{}", neon_config.database
         );
         r = block_on(do_http_get(build_uri(endpoint), &neon_config));
     } else if action == "delete-branch" {
-        let endpoint: String = format!("/projects/{}/branches/{}", project, branch);
+        let endpoint: String = format!("/projects/{project}/branches/{branch}");
         r = block_on(do_http_delete(build_uri(endpoint), &neon_config));
     } else if action == "create-branch" {
     }
@@ -349,10 +345,10 @@ async fn perform_endpoints_action(
     let r: Result<String, Box<dyn Error>>;
     if action == "list-endpoints" {
         // target/debug/neon-cli endpoints -a list-endpoints -p white-voice-129396
-        let endpoint: String = format!("/projects/{}/endpoints", project);
+        let endpoint: String = format!("/projects/{project}/endpoints");
         r = block_on(do_http_get(build_uri(endpoint), &neon_config));
     } else if action == "endpoint-details" {
-        let endpoint: String = format!("/projects/{}/endpoints/{}", project, endpoint);
+        let endpoint: String = format!("/projects/{project}/endpoints/{endpoint}");
         r = block_on(do_http_get(build_uri(endpoint), &neon_config));
     } else {
         panic!("Unknown Endpoints Action: {action}");
@@ -362,7 +358,7 @@ async fn perform_endpoints_action(
 
 #[tokio::main]
 async fn perform_consumption_action(limit: u32, cursor: &String, neon_config: &NeonSession) {
-    let endpoint: String = format!("/consumption/projects?cursor={}&limit={}", cursor, limit);
+    let endpoint: String = format!("/consumption/projects?cursor={cursor}&limit={limit}");
     let r = block_on(do_http_get(build_uri(endpoint), &neon_config));
     handle_http_result(r).ok();
 }
@@ -372,22 +368,35 @@ async fn perform_operations_action(
     action: &String,
     project: &String,
     operation: &String,
+    format: &String,
     neon_config: &NeonSession,
 ) {
     let r: Result<String, Box<dyn Error>>;
     if action == "list-operations" {
-        let endpoint: String = format!("/projects/{}/operations", project);
+        let endpoint: String = format!("/projects/{project}/operations");
         r = block_on(do_http_get(build_uri(endpoint), &neon_config));
     } else if action == "operation-details" {
         if operation.is_empty() {
             panic!("Operation ID is required");
         }
-        let endpoint: String = format!("/projects/{}/operations/{}", project, operation);
+        let endpoint: String = format!("/projects/{project}/operations/{operation}");
         r = block_on(do_http_get(build_uri(endpoint), &neon_config));
     } else {
         panic!("Unknown Operation Action: {action}");
     }
-    handle_http_result(r).ok();
+    handle_formatting_output(r, format, "operations");
+}
+
+fn handle_formatting_output(r:Result<String, Box<dyn Error>>, format:&String, rows_key:&str) {
+    if format.is_empty() || format == "json" {
+        handle_http_result(r).ok();
+    } else if format == "table" {
+        let json_blob: Value = serde_json::from_str(&r.unwrap()).unwrap();
+        let rows = json_blob[rows_key].as_array().unwrap();
+        print_generic_json_table(rows);
+    } else {
+        panic!("Unknown format: {format}");
+    }
 }
 
 fn perform_import_action(
@@ -476,7 +485,11 @@ fn main() {
             let p = project.unwrap_or("".to_string()); // project id
             perform_projects_action(&action, &p, &format, &config)
         }
-        Action::Keys { action, name, format } => {
+        Action::Keys {
+            action,
+            name,
+            format,
+        } => {
             let name = name.unwrap_or("".to_string()); // name of the key to create
             perform_keys_action(&action, &name, &format, &config);
         }
@@ -509,10 +522,11 @@ fn main() {
             action,
             project,
             operation,
+            format,
         } => {
             let p = project.expect("Project ID is required for operations");
             let o: String = operation.unwrap_or("".to_string());
-            perform_operations_action(&action, &p, &o, &config);
+            perform_operations_action(&action, &p, &o, &format, &config);
         }
         Action::Import {
             table,
