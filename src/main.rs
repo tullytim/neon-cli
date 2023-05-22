@@ -16,7 +16,7 @@ use serde_json::{to_string_pretty, Value};
 use std::{collections::HashMap, error::Error, vec::Vec};
 mod neonutils;
 mod networking;
-use crate::neonutils::reflective_get;
+use crate::neonutils::{reflective_get, print_generic_json_table};
 use crate::networking::{do_http_delete, do_http_get, do_http_post};
 
 #[macro_use]
@@ -57,9 +57,15 @@ enum Action {
     #[clap(about = "Get information about keys in Neon.")]
     Keys {
         #[clap(short, long)]
+        #[arg(help = String::from("Keys action to take.  Can be one of \"list\", \"create\", or \"revoke\""))]
         action: String,
         #[clap(short, long)]
+        #[arg(help = String::from("Project the key belongs to."))]
         name: Option<String>,
+        #[clap(short, long)]
+        #[arg(default_value_t = String::from("json"))]
+        #[arg(help = String::from("Format output for the keys. Can be one of \"json\" or \"table\""))]
+        format: String,
     },
     #[clap(about = "Get information about branches in Neon.")]
     Branch {
@@ -195,7 +201,6 @@ impl Query {
 
 impl Drop for Query {
     fn drop(&mut self) {
-        println!("dropping query");
     }
 }
 
@@ -212,7 +217,7 @@ fn initialize_env() -> NeonSession {
 }
 
 fn build_uri(endpoint: String) -> String {
-    format!("{}{}", NEON_BASE_URL.to_string(), endpoint)
+    format!("{}{endpoint}", NEON_BASE_URL.to_string())
 }
 
 // String in the Result is unformatted JSON (non-pretty).
@@ -224,14 +229,14 @@ fn handle_http_result(r: Result<String, Box<dyn Error>>) -> serde_json::Result<(
             println!("{}", formatted.unwrap());
         }
         Err(e) => {
-            panic!("Error: {}", e);
+            panic!("Error: {e}");
         }
     }
     Ok(())
 }
 
 #[tokio::main]
-async fn perform_keys_action(action: &String, name: &String, neon_config: &NeonSession) {
+async fn perform_keys_action(action: &String, name: &String, format:&String, neon_config: &NeonSession) {
     let r: Result<String, Box<dyn Error>>;
     match action {
         s if s == "list" => {
@@ -252,8 +257,15 @@ async fn perform_keys_action(action: &String, name: &String, neon_config: &NeonS
             panic!("Unknown Keys action");
         }
     }
-    handle_http_result(r).ok();
-}
+    if format.is_empty() || format == "json" {
+        handle_http_result(r).ok();
+    } else if format == "table" {
+        let json_str = r.unwrap();
+        let parsed_array:Vec<Value> = serde_json::from_str(json_str.as_str()).unwrap();
+        print_generic_json_table(&parsed_array);
+    } else {
+        panic!("Unknown format: {format}");
+    }}
 
 #[tokio::main]
 async fn perform_projects_action(
@@ -281,30 +293,10 @@ async fn perform_projects_action(
         handle_http_result(r).ok();
     } else if format == "table" {
         let json_blob: Value = serde_json::from_str(&r.unwrap()).unwrap();
-        let mut table = Table::new();
-        table
-            .load_preset(UTF8_FULL)
-            .apply_modifier(UTF8_ROUND_CORNERS)
-            .set_content_arrangement(ContentArrangement::Dynamic);
-        let mut saw_first_row = false;
         let projects = json_blob["projects"].as_array().unwrap();
-
-        for project in projects {
-            for (key, value) in project.as_object().unwrap() {
-                if !saw_first_row {
-                    let col_names: Vec<String> =
-                    project.as_object().unwrap().iter().map(|c| c.0.to_string()).collect::<Vec<String>>();
-                    table.set_header(col_names);
-                    saw_first_row = true;
-                }
-            }
-            //let row_strs: Vec<String> = project.as_object().unwrap().iter().map(|c| c.1.to_string()).collect::<Vec<String>>();
-            let row_strs: Vec<String> = project.as_object().unwrap().iter().map(|c| c.1.to_string()).collect::<Vec<String>>();
-            table.add_row(row_strs);
-        }
-        println!("{table}");
+        print_generic_json_table(projects);
     } else {
-        panic!("Unknown format: {}", format);
+        panic!("Unknown format: {format}");
     }
 }
 
@@ -363,7 +355,7 @@ async fn perform_endpoints_action(
         let endpoint: String = format!("/projects/{}/endpoints/{}", project, endpoint);
         r = block_on(do_http_get(build_uri(endpoint), &neon_config));
     } else {
-        panic!("Unknown Endpoints Action: {}", action);
+        panic!("Unknown Endpoints Action: {action}");
     }
     handle_http_result(r).ok();
 }
@@ -393,7 +385,7 @@ async fn perform_operations_action(
         let endpoint: String = format!("/projects/{}/operations/{}", project, operation);
         r = block_on(do_http_get(build_uri(endpoint), &neon_config));
     } else {
-        panic!("Unknown Operation Action: {}", action);
+        panic!("Unknown Operation Action: {action}");
     }
     handle_http_result(r).ok();
 }
@@ -447,7 +439,7 @@ fn perform_import_action(
                 let v: f64 = record[i].parse::<f64>().unwrap();
                 params.push(Box::new(v));
             } else {
-                panic!("Unknown column type: {}", ct);
+                panic!("Unknown column type: {ct}");
             }
         }
 
@@ -484,9 +476,9 @@ fn main() {
             let p = project.unwrap_or("".to_string()); // project id
             perform_projects_action(&action, &p, &format, &config)
         }
-        Action::Keys { action, name } => {
+        Action::Keys { action, name, format } => {
             let name = name.unwrap_or("".to_string()); // name of the key to create
-            perform_keys_action(&action, &name, &config);
+            perform_keys_action(&action, &name, &format, &config);
         }
         Action::Branch {
             action,

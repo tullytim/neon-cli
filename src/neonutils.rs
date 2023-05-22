@@ -1,4 +1,7 @@
 use chrono::Utc;
+use serde_json::Value;
+use comfy_table::*;
+use comfy_table::{modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL};
 
 /// The postgres-crate does not provide a default mapping to fallback to String for all
 /// types: row.get is generic and without a type assignment the FromSql-Trait cannot be inferred.
@@ -46,4 +49,28 @@ pub fn reflective_get(row: &postgres::Row, index: usize) -> String {
         &_ => Some("CANNOT PARSE".to_string()),
     };
     value.unwrap_or("".to_string())
+}
+
+
+pub fn print_generic_json_table(rows: &Vec<Value>) {
+    let mut table = Table::new();
+    table
+        .load_preset(UTF8_FULL)
+        .apply_modifier(UTF8_ROUND_CORNERS)
+        .set_content_arrangement(ContentArrangement::Dynamic);
+    let mut saw_first_row = false;
+
+    for row in rows {
+        for (key, value) in row.as_object().unwrap() {
+            if !saw_first_row {
+                let col_names: Vec<String> =
+                row.as_object().unwrap().iter().map(|c| c.0.to_string()).collect::<Vec<String>>();
+                table.set_header(col_names);
+                saw_first_row = true;
+            }
+        }
+        let row_strs: Vec<String> = row.as_object().unwrap().iter().map(|c| c.1.to_string()).collect::<Vec<String>>();
+        table.add_row(row_strs);
+    }
+    println!("{table}");
 }
