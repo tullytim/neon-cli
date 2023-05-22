@@ -61,7 +61,7 @@ pub fn print_generic_json_table(rows: &Vec<Value>) {
     let mut saw_first_row = false;
 
     for row in rows {
-        for (key, value) in row.as_object().unwrap() {
+        for (_key, _value) in row.as_object().unwrap() {
             if !saw_first_row {
                 let col_names: Vec<String> =
                 row.as_object().unwrap().iter().map(|c| c.0.to_string()).collect::<Vec<String>>();

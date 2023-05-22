@@ -70,6 +70,7 @@ enum Action {
     #[clap(about = "Get information about branches in Neon.")]
     Branch {
         #[clap(short, long)]
+        #[arg(help = String::from("Branch action to be performed. Can be one of \"list-branches\"."))]
         action: String,
         #[clap(short, long)]
         #[arg(help = String::from("Project the branch belongs to."))]
@@ -78,15 +79,22 @@ enum Action {
         #[arg(help = String::from("Branch to get data for."))]
         branch: Option<String>,
         #[clap(short, long)]
+        #[arg(default_value_t = String::from("json"))]
+        #[arg(help = String::from("Format output for the keys. Can be one of \"json\" or \"table\""))]
+        format: String,
+        #[clap(short, long)]
         roles: Option<String>,
     },
     #[clap(about = "Get information about endpoints in Neon.")]
     Endpoints {
         #[clap(short, long)]
+        #[arg(help = String::from("Endpoint action to be performed. Can be one of \"start\", \"suspend\", \"list\" or \"details\"."))]
         action: String,
         #[clap(short, long)]
+        #[arg(help = String::from("Project the endpoint belongs to."))]
         project: Option<String>,
         #[clap(short, long)]
+        #[arg(help = String::from("The endpoint id."))]
         endpoint: Option<String>,
     },
     #[clap(about = "Get information about operations in Neon.")]
@@ -298,12 +306,13 @@ async fn perform_projects_action(
     handle_formatting_output(r, format, "projects");
 }
 
-// tim@yoda neon-cli % target/debug/neon-cli branch -a list-roles -p white-voice-129396 -b br-dry-silence-599905
+// % target/debug/neon-cli branch -a list-roles -p white-voice-129396 -b br-dry-silence-599905
 #[tokio::main]
 async fn perform_branches_action(
     action: &String,
     project: &String,
     branch: &String,
+    format: &String,
     _roles: &String,
     neon_config: &NeonSession,
 ) {
@@ -331,8 +340,10 @@ async fn perform_branches_action(
         let endpoint: String = format!("/projects/{project}/branches/{branch}");
         r = block_on(do_http_delete(build_uri(endpoint), &neon_config));
     } else if action == "create-branch" {
+    } else{
+        panic!("Unknown Branch Action: {action}")
     }
-    handle_http_result(r).ok();
+    handle_formatting_output(r, format, "branches");
 }
 
 #[tokio::main]
@@ -343,14 +354,25 @@ async fn perform_endpoints_action(
     neon_config: &NeonSession,
 ) {
     let r: Result<String, Box<dyn Error>>;
-    if action == "list-endpoints" {
+    if action == "list" {
         // target/debug/neon-cli endpoints -a list-endpoints -p white-voice-129396
-        let endpoint: String = format!("/projects/{project}/endpoints");
-        r = block_on(do_http_get(build_uri(endpoint), &neon_config));
-    } else if action == "endpoint-details" {
-        let endpoint: String = format!("/projects/{project}/endpoints/{endpoint}");
-        r = block_on(do_http_get(build_uri(endpoint), &neon_config));
-    } else {
+        let uri: String = format!("/projects/{project}/endpoints");
+        r = block_on(do_http_get(build_uri(uri), &neon_config));
+    } else if action == "details" {
+        let uri: String = format!("/projects/{project}/endpoints/{endpoint}");
+        r = block_on(do_http_get(build_uri(uri), &neon_config));
+    } else if action == "delete" {
+        let uri: String = format!("/projects/{project}/endpoints/{endpoint}");
+        r = block_on(do_http_delete(build_uri(uri), &neon_config));
+    } else if action == "start" || action == "suspend" {
+        if endpoint.is_empty() {
+            panic!("Endpoint name is required");
+        }
+        let uri: String = format!("/projects/{project}/endpoints/{endpoint}/{action}");
+        let post_body: HashMap<String, String> = HashMap::new();
+        r = block_on(do_http_post(build_uri(uri), &post_body, &neon_config));
+    }
+    else {
         panic!("Unknown Endpoints Action: {action}");
     }
     handle_http_result(r).ok();
@@ -428,7 +450,7 @@ fn perform_import_action(
     let mut params = Vec::<Box<dyn ToSql + Sync>>::new();
     let range = 1..=column_types.len(); // Create a range from start to end (inclusive)
     let mapped_values: String = range
-        .map(|i| format!("${}", i))
+        .map(|i| format!("${i}"))
         .collect::<Vec<String>>()
         .join(",");
 
@@ -438,17 +460,35 @@ fn perform_import_action(
         let record = row.unwrap();
         for i in 0..record.len() {
             let ct = &column_types[i];
-            if ct == "text" {
-                let v = record[i].parse::<String>().unwrap();
-                params.push(Box::new(v));
-            } else if ct == "integer" {
-                let v = record[i].parse::<i32>().unwrap();
-                params.push(Box::new(v));
-            } else if ct == "real" {
-                let v: f64 = record[i].parse::<f64>().unwrap();
-                params.push(Box::new(v));
-            } else {
-                panic!("Unknown column type: {ct}");
+            
+            match ct.as_str() {
+                "text" | "character varying" | "varchar" => {
+                    let v = record[i].parse::<String>().unwrap();
+                    params.push(Box::new(v));
+                },
+                "smallint" => {
+                    let v = record[i].parse::<i16>().unwrap();
+                    params.push(Box::new(v));
+                },
+                "integer" | "int" | "int4" => {
+                    let v = record[i].parse::<i32>().unwrap();
+                    params.push(Box::new(v));
+                }
+                "real"  | "float8"=> {
+                    let v = record[i].parse::<f64>().unwrap();
+                    params.push(Box::new(v));
+                },
+                "bigint" | "int8" => {
+                    let v = record[i].parse::<i64>().unwrap();
+                    params.push(Box::new(v));
+                },
+                "bool" | "boolean" => {
+                    let v = record[i].parse::<bool>().unwrap();
+                    params.push(Box::new(v));
+                },
+                _ => {
+                    panic!("Unknown column type: {ct}");
+                }
             }
         }
 
@@ -456,9 +496,7 @@ fn perform_import_action(
             .iter()
             .map(|x: &Box<dyn ToSql + Sync>| &**x)
             .collect::<Vec<_>>();
-
         client.execute(&q, &param_values).expect("Couldn't insert");
-
         params.clear();
     }
     Ok(())
@@ -493,16 +531,11 @@ fn main() {
             let name = name.unwrap_or("".to_string()); // name of the key to create
             perform_keys_action(&action, &name, &format, &config);
         }
-        Action::Branch {
-            action,
-            project,
-            branch,
-            roles,
-        } => {
+        Action::Branch { action, project, branch, format, roles } => {
             let p = project.unwrap_or("".to_string());
             let b: String = branch.unwrap_or("".to_string());
             let r: String = roles.unwrap_or("".to_string());
-            perform_branches_action(&action, &p, &b, &r, &config);
+            perform_branches_action(&action, &p, &b, &format, &r, &config);
         }
         Action::Endpoints {
             action,
