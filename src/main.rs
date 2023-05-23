@@ -14,8 +14,10 @@ use postgres_openssl::MakeTlsConnector;
 use serde::Deserialize;
 use serde_json::{to_string_pretty, Value};
 use std::{collections::HashMap, error::Error, vec::Vec};
+
 mod neonutils;
 mod networking;
+
 use crate::neonutils::{print_generic_json_table, reflective_get};
 use crate::networking::{do_http_delete, do_http_get, do_http_post};
 
@@ -313,28 +315,41 @@ async fn perform_branches_action(
     project: &String,
     branch: &String,
     format: &String,
-    _roles: &String,
-    neon_config: &NeonSession,
+    role: &String,
+    neon_config: &NeonSession
 ) {
     let mut r: Result<String, Box<dyn Error>> = Ok("".to_string());
-    if action == "list-roles" {
-        let endpoint: String = format!("/projects/{project}/branches/{branch}/roles");
-        r = block_on(do_http_get(build_uri(endpoint), &neon_config));
-    } else if action == "list-endpoints" {
+    let mut rows_key = "branches";
+
+    if action == "list-endpoints" {
         let endpoint: String = format!("/projects/{project}/branches/{branch}/endpoints");
+        rows_key = "endpoints";
         r = block_on(do_http_get(build_uri(endpoint), &neon_config));
-    } else if action == "list-branches" {
+    } else if action == "list-branches" { // target/debug/neon-cli branch -a list-branches -p white-voice-129396 -b br-dry-silence-599905
         let endpoint: String = format!("/projects/{project}/branches");
         r = block_on(do_http_get(build_uri(endpoint), &neon_config));
-    } else if action == "branch-details" {
+    } else if action == "list-roles" { // neon-cli branch -a list-roles -p white-voice-129396 -b br-dry-silence-599905
+        let endpoint: String = format!("/projects/{project}/branches/{branch}/roles");
+        rows_key = "roles";
+        r = block_on(do_http_get(build_uri(endpoint), &neon_config));
+    } else if action == "role-details" { // % target/debug/neon-cli branch -a role-details -p white-voice-129396 -b br-dry-silence-599905  -r tim
+        if role.is_empty() {panic!("Role name is required");}
+        rows_key = "role";
+        let endpoint: String = format!("/projects/{project}/branches/{branch}/roles/{role}");
+        r = block_on(do_http_get(build_uri(endpoint), &neon_config));
+    } else if action == "role-delete" {
+        if role.is_empty() {panic!("Role name is required");}
+        let endpoint: String = format!("/projects/{project}/branches/{branch}/roles/{role}");
+        r = block_on(do_http_delete(build_uri(endpoint), &neon_config));
+    }  else if action == "branch-details" { // target/debug/neon-cli branch -a branch-details -p white-voice-129396 -b br-dry-silence-599905  -f table
         let endpoint: String = format!("/projects/{project}/branches/{branch}");
         r = block_on(do_http_get(build_uri(endpoint), &neon_config));
     } else if action == "list-databases" {
         let endpoint: String = format!("/projects/{project}/branches/{branch}/databases");
+        rows_key = "databases";
         r = block_on(do_http_get(build_uri(endpoint), &neon_config));
     } else if action == "database-details" {
-        let endpoint: String = format!("/projects/{project}/branches/{branch}/databases/{}", neon_config.database
-        );
+        let endpoint: String = format!("/projects/{project}/branches/{branch}/databases/{}", neon_config.database);
         r = block_on(do_http_get(build_uri(endpoint), &neon_config));
     } else if action == "delete-branch" {
         let endpoint: String = format!("/projects/{project}/branches/{branch}");
@@ -343,7 +358,7 @@ async fn perform_branches_action(
     } else{
         panic!("Unknown Branch Action: {action}")
     }
-    handle_formatting_output(r, format, "branches");
+    handle_formatting_output(r, format, rows_key);
 }
 
 #[tokio::main]
@@ -414,8 +429,17 @@ fn handle_formatting_output(r:Result<String, Box<dyn Error>>, format:&String, ro
         handle_http_result(r).ok();
     } else if format == "table" {
         let json_blob: Value = serde_json::from_str(&r.unwrap()).unwrap();
-        let rows = json_blob[rows_key].as_array().unwrap();
-        print_generic_json_table(rows);
+        let candidate = json_blob[rows_key].as_array();
+        let mut rows:Vec<Value> = Vec::new();
+        if candidate.is_none(){ 
+            if let Some((_key, value)) = json_blob.as_object().unwrap().iter().next() {
+                rows = vec![value.clone()];
+            }
+        }
+        else {
+            rows = json_blob[rows_key].as_array().expect("No rows found in response").to_vec();
+        }
+        print_generic_json_table(&rows);
     } else {
         panic!("Unknown format: {format}");
     }
