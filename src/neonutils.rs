@@ -2,6 +2,7 @@ use chrono::Utc;
 use serde_json::Value;
 use comfy_table::*;
 use comfy_table::{modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL};
+use std::{collections::HashMap, vec::Vec};
 
 /// The postgres-crate does not provide a default mapping to fallback to String for all
 /// types: row.get is generic and without a type assignment the FromSql-Trait cannot be inferred.
@@ -73,4 +74,25 @@ pub fn print_generic_json_table(rows: &Vec<Value>) {
         table.add_row(row_strs);
     }
     println!("{table}");
+}
+
+pub fn jsonstring_to_map(json_str: &String) -> Box<HashMap<String,String>>{
+    let v: Value = serde_json::from_str(json_str).unwrap();
+    let mut map: HashMap<String, String> = HashMap::new();
+    if let Value::Object(object) = v {
+        for (key, value) in object {
+            if let Value::String(string_value) = value {
+                map.insert(key, string_value);
+            }
+        }
+    }
+    return Box::new(map);
+}
+
+pub fn json_get_first_object(json_blob: &Value) -> Option<Value> {
+    let mut rv: Option<Value> = None;
+    if let Some((_key, value)) = json_blob.as_object().unwrap().iter().next() {
+        rv = Some(value.clone());
+    }
+    return rv;
 }

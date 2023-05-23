@@ -12,14 +12,14 @@ use openssl::ssl::{SslConnector, SslMethod};
 use postgres::{types::ToSql, Client};
 use postgres_openssl::MakeTlsConnector;
 use serde::Deserialize;
-use serde_json::{to_string_pretty, Value};
+use serde_json::{to_string_pretty, Value, json};
 use std::{collections::HashMap, error::Error, vec::Vec};
-
+use std::any::type_name;
 mod neonutils;
 mod networking;
 
-use crate::neonutils::{print_generic_json_table, reflective_get};
-use crate::networking::{do_http_delete, do_http_get, do_http_post};
+use crate::neonutils::{jsonstring_to_map, print_generic_json_table, reflective_get, json_get_first_object};
+use crate::networking::{do_http_delete, do_http_get, do_http_post, do_http_post_text};
 
 #[macro_use]
 extern crate dotenv_codegen;
@@ -97,7 +97,13 @@ enum Action {
         project: Option<String>,
         #[clap(short, long)]
         #[arg(help = String::from("The endpoint id."))]
+        branch: Option<String>,
+        #[clap(short, long)]
+        #[arg(help = String::from("Branch to get data for."))]
         endpoint: Option<String>,
+        #[clap(short, long)]
+        #[arg(help = String::from("Config for endpoint create (json object as a string). See https://api-docs.neon.tech/reference/createprojectendpoint"))]
+        initconfig: Option<String>,
     },
     #[clap(about = "Get information about operations in Neon.")]
     Operations {
@@ -316,7 +322,7 @@ async fn perform_branches_action(
     branch: &String,
     format: &String,
     role: &String,
-    neon_config: &NeonSession
+    neon_config: &NeonSession,
 ) {
     let mut r: Result<String, Box<dyn Error>> = Ok("".to_string());
     let mut rows_key = "branches";
@@ -325,23 +331,31 @@ async fn perform_branches_action(
         let endpoint: String = format!("/projects/{project}/branches/{branch}/endpoints");
         rows_key = "endpoints";
         r = block_on(do_http_get(build_uri(endpoint), &neon_config));
-    } else if action == "list-branches" { // target/debug/neon-cli branch -a list-branches -p white-voice-129396 -b br-dry-silence-599905
+    } else if action == "list-branches" {
+        // target/debug/neon-cli branch -a list-branches -p white-voice-129396 -b br-dry-silence-599905
         let endpoint: String = format!("/projects/{project}/branches");
         r = block_on(do_http_get(build_uri(endpoint), &neon_config));
-    } else if action == "list-roles" { // neon-cli branch -a list-roles -p white-voice-129396 -b br-dry-silence-599905
+    } else if action == "list-roles" {
+        // neon-cli branch -a list-roles -p white-voice-129396 -b br-dry-silence-599905
         let endpoint: String = format!("/projects/{project}/branches/{branch}/roles");
         rows_key = "roles";
         r = block_on(do_http_get(build_uri(endpoint), &neon_config));
-    } else if action == "role-details" { // % target/debug/neon-cli branch -a role-details -p white-voice-129396 -b br-dry-silence-599905  -r tim
-        if role.is_empty() {panic!("Role name is required");}
+    } else if action == "role-details" {
+        // % target/debug/neon-cli branch -a role-details -p white-voice-129396 -b br-dry-silence-599905  -r tim
+        if role.is_empty() {
+            panic!("Role name is required");
+        }
         rows_key = "role";
         let endpoint: String = format!("/projects/{project}/branches/{branch}/roles/{role}");
         r = block_on(do_http_get(build_uri(endpoint), &neon_config));
     } else if action == "role-delete" {
-        if role.is_empty() {panic!("Role name is required");}
+        if role.is_empty() {
+            panic!("Role name is required");
+        }
         let endpoint: String = format!("/projects/{project}/branches/{branch}/roles/{role}");
         r = block_on(do_http_delete(build_uri(endpoint), &neon_config));
-    }  else if action == "branch-details" { // target/debug/neon-cli branch -a branch-details -p white-voice-129396 -b br-dry-silence-599905  -f table
+    } else if action == "branch-details" {
+        // target/debug/neon-cli branch -a branch-details -p white-voice-129396 -b br-dry-silence-599905  -f table
         let endpoint: String = format!("/projects/{project}/branches/{branch}");
         r = block_on(do_http_get(build_uri(endpoint), &neon_config));
     } else if action == "list-databases" {
@@ -349,16 +363,23 @@ async fn perform_branches_action(
         rows_key = "databases";
         r = block_on(do_http_get(build_uri(endpoint), &neon_config));
     } else if action == "database-details" {
-        let endpoint: String = format!("/projects/{project}/branches/{branch}/databases/{}", neon_config.database);
+        let endpoint: String = format!(
+            "/projects/{project}/branches/{branch}/databases/{}",
+            neon_config.database
+        );
         r = block_on(do_http_get(build_uri(endpoint), &neon_config));
     } else if action == "delete-branch" {
         let endpoint: String = format!("/projects/{project}/branches/{branch}");
         r = block_on(do_http_delete(build_uri(endpoint), &neon_config));
     } else if action == "create-branch" {
-    } else{
+    } else {
         panic!("Unknown Branch Action: {action}")
     }
     handle_formatting_output(r, format, rows_key);
+}
+
+fn print_type_of<T>(_: &T) {
+    println!("{}", std::any::type_name::<T>())
 }
 
 #[tokio::main]
@@ -366,11 +387,20 @@ async fn perform_endpoints_action(
     action: &String,
     project: &String,
     endpoint: &String,
+    branch: &String,
+    config: &String, // the endpoint configuration, not the postgres setup
     neon_config: &NeonSession,
 ) {
     let r: Result<String, Box<dyn Error>>;
-    if action == "list" {
-        // target/debug/neon-cli endpoints -a list-endpoints -p white-voice-129396
+    if action == "create" {
+        let uri: String = format!("/projects/{project}/endpoints");
+        if config.is_empty() {panic!("Missing or empty configuration for new endpoint.  Use the --initconfig param.")}
+        let json_value: Result<Value, serde_json::Error> = serde_json::from_str(config);
+        let mut tmp = json_value.unwrap();
+        tmp["endpoint"]["branch_id"] = json!(branch);
+        r = block_on(do_http_post_text(build_uri(uri), &tmp.to_string(), &neon_config));
+    } else if action == "list" {
+        // target/debug/neon-cli endpoints -a list -p white-voice-129396
         let uri: String = format!("/projects/{project}/endpoints");
         r = block_on(do_http_get(build_uri(uri), &neon_config));
     } else if action == "details" {
@@ -386,8 +416,7 @@ async fn perform_endpoints_action(
         let uri: String = format!("/projects/{project}/endpoints/{endpoint}/{action}");
         let post_body: HashMap<String, String> = HashMap::new();
         r = block_on(do_http_post(build_uri(uri), &post_body, &neon_config));
-    }
-    else {
+    } else {
         panic!("Unknown Endpoints Action: {action}");
     }
     handle_http_result(r).ok();
@@ -424,20 +453,22 @@ async fn perform_operations_action(
     handle_formatting_output(r, format, "operations");
 }
 
-fn handle_formatting_output(r:Result<String, Box<dyn Error>>, format:&String, rows_key:&str) {
+fn handle_formatting_output(r: Result<String, Box<dyn Error>>, format: &String, rows_key: &str) {
     if format.is_empty() || format == "json" {
         handle_http_result(r).ok();
     } else if format == "table" {
         let json_blob: Value = serde_json::from_str(&r.unwrap()).unwrap();
         let candidate = json_blob[rows_key].as_array();
-        let mut rows:Vec<Value> = Vec::new();
-        if candidate.is_none(){ 
+        let mut rows: Vec<Value> = Vec::new();
+        if candidate.is_none() {
             if let Some((_key, value)) = json_blob.as_object().unwrap().iter().next() {
                 rows = vec![value.clone()];
             }
-        }
-        else {
-            rows = json_blob[rows_key].as_array().expect("No rows found in response").to_vec();
+        } else {
+            rows = json_blob[rows_key]
+                .as_array()
+                .expect("No rows found in response")
+                .to_vec();
         }
         print_generic_json_table(&rows);
     } else {
@@ -484,32 +515,32 @@ fn perform_import_action(
         let record = row.unwrap();
         for i in 0..record.len() {
             let ct = &column_types[i];
-            
+
             match ct.as_str() {
                 "text" | "character varying" | "varchar" => {
                     let v = record[i].parse::<String>().unwrap();
                     params.push(Box::new(v));
-                },
+                }
                 "smallint" => {
                     let v = record[i].parse::<i16>().unwrap();
                     params.push(Box::new(v));
-                },
+                }
                 "integer" | "int" | "int4" => {
                     let v = record[i].parse::<i32>().unwrap();
                     params.push(Box::new(v));
                 }
-                "real"  | "float8"=> {
+                "real" | "float8" => {
                     let v = record[i].parse::<f64>().unwrap();
                     params.push(Box::new(v));
-                },
+                }
                 "bigint" | "int8" => {
                     let v = record[i].parse::<i64>().unwrap();
                     params.push(Box::new(v));
-                },
+                }
                 "bool" | "boolean" => {
                     let v = record[i].parse::<bool>().unwrap();
                     params.push(Box::new(v));
-                },
+                }
                 _ => {
                     panic!("Unknown column type: {ct}");
                 }
@@ -555,20 +586,32 @@ fn main() {
             let name = name.unwrap_or("".to_string()); // name of the key to create
             perform_keys_action(&action, &name, &format, &config);
         }
-        Action::Branch { action, project, branch, format, roles } => {
+        Action::Branch {
+            action,
+            project,
+            branch,
+            format,
+            roles,
+        } => {
             let p = project.unwrap_or("".to_string());
             let b: String = branch.unwrap_or("".to_string());
             let r: String = roles.unwrap_or("".to_string());
             perform_branches_action(&action, &p, &b, &format, &r, &config);
         }
+
+        
         Action::Endpoints {
             action,
             project,
+            branch,
             endpoint,
+            initconfig
         } => {
             let p = project.unwrap_or("".to_string());
+            let b: String = branch.unwrap_or("".to_string());
             let e: String = endpoint.unwrap_or("".to_string());
-            perform_endpoints_action(&action, &p, &e, &config);
+            let params: String = initconfig.unwrap_or("".to_string()); // the json blob for endpoint config
+            perform_endpoints_action(&action, &p, &e, &b, &params, &config);
         }
         Action::Consumption { limit, cursor } => {
             let limit = limit.unwrap_or(16);
