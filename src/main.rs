@@ -18,7 +18,7 @@ mod neonutils;
 mod networking;
 
 use crate::neonutils::{print_generic_json_table, reflective_get};
-use crate::networking::{do_http_delete, do_http_get, do_http_post, do_http_post_text};
+use crate::networking::*;
 
 #[macro_use]
 extern crate dotenv_codegen;
@@ -38,107 +38,78 @@ struct Cli {
 enum Action {
     #[clap(about = "Execute a query")]
     Query {
-        #[clap(short, long)]
-        #[arg(help = String::from("SQL query string to execute."))]
+        #[arg(short, long, help = String::from("SQL query string to execute."))]
         sql: String,
     },
     #[clap(about = "Get information about projects in Neon.")]
     Projects {
-        #[clap(short, long)]
-        #[arg(help = String::from(r#"Format output for the projects. Can be one of "list-projects", "project-details", "delete-project""#))]
+        #[arg(short, long, help = String::from(r#"Format output for the projects. Can be one of "list-projects", "project-details", "delete-project""#))]
         action: String,
-        #[clap(short, long)]
-        #[arg(help = String::from(r#"The project identifier to use in the operation, if any. list-projects does not use this arg."#))]
+        #[arg(short, long, help = String::from(r#"The project identifier to use in the operation, if any. list-projects does not use this arg."#))]
         project: Option<String>,
-        #[clap(short, long)]
-        #[arg(default_value_t = String::from("json"))]
-        #[arg(help = String::from(r#"Format output for the projects. Can be one of "json" or "table""#))]
+        #[arg(short, long, default_value_t = String::from("json"), help = String::from(r#"Format output for the projects. Can be one of "json" or "table""#))]
         format: String,
     },
     #[clap(about = "Get information about keys in Neon.")]
     Keys {
-        #[clap(short, long)]
-        #[arg(help = String::from(r#"Keys action to take.  Can be one of "list", "create", or "revoke""#))]
+        #[arg(short, long, help = String::from(r#"Keys action to take.  Can be one of "list", "create", or "revoke""#))]
         action: String,
-        #[clap(short, long)]
-        #[arg(help = String::from("Project the key belongs to."))]
+        #[arg(short, long, help = String::from("Project the key belongs to."))]
         name: Option<String>,
-        #[clap(short, long)]
-        #[arg(default_value_t = String::from("json"))]
-        #[arg(help = String::from(r#"Format output for the keys. Can be one of "json" or "table""#))]
+        #[arg(short, long, default_value_t = String::from("json"), help = String::from(r#"Format output for the keys. Can be one of "json" or "table""#))]
         format: String,
     },
     #[clap(about = "Get information about branches in Neon.")]
     Branch {
-        #[clap(short, long)]
-        #[arg(help = String::from(r#"Branch action to be performed. Can be one of "list-branches"."#))]
+        #[arg(short, long, help = String::from(r#"Branch action to be performed. Can be one of "list-branches"."#))]
         action: String,
-        #[clap(short, long)]
-        #[arg(help = String::from("Project the branch belongs to."))]
+        #[arg(short, long, help = String::from("Project the branch belongs to."))]
         project: Option<String>,
-        #[clap(short, long)]
-        #[arg(help = String::from("Branch to get data for."))]
+        #[arg(short, long, help = String::from("Branch to get data for."))]
         branch: Option<String>,
-        #[clap(short, long)]
-        #[arg(default_value_t = String::from("json"))]
-        #[arg(help = String::from(r#"Format output for the keys. Can be one of "json" or "table""#))]
+        #[arg(short, long, default_value_t = String::from("json"), help = String::from(r#"Format output for the keys. Can be one of "json" or "table""#))]
         format: String,
         #[clap(short, long)]
         roles: Option<String>,
     },
     #[clap(about = "Get information about endpoints in Neon.")]
     Endpoints {
-        #[clap(short, long)]
-        #[arg(help = String::from(r#"Endpoint action to be performed. Can be one of "start", "suspend", "list" or "details"."#))]
+        #[arg(short, long, help = String::from(r#"Endpoint action to be performed. Can be one of "start", "suspend", "list" or "details"."#))]
         action: String,
-        #[clap(short, long)]
-        #[arg(help = String::from("Project the endpoint belongs to."))]
+        #[arg(short, long, help = String::from("Project the endpoint belongs to."))]
         project: Option<String>,
-        #[clap(short, long)]
-        #[arg(help = String::from("The endpoint id."))]
+        #[arg(short, long, help = String::from("The endpoint id."))]
         branch: Option<String>,
-        #[clap(short, long)]
-        #[arg(help = String::from("Branch to get data for."))]
+        #[arg(short, long, help = String::from("Branch to get data for."))]
         endpoint: Option<String>,
-        #[clap(short, long)]
-        #[arg(help = String::from("Config for endpoint create (json object as a string). See https://api-docs.neon.tech/reference/createprojectendpoint"))]
+        #[arg(short, long, help = String::from("Config for endpoint create (json object as a string). See https://api-docs.neon.tech/reference/createprojectendpoint"))]
         initconfig: Option<String>,
     },
     #[clap(about = "Get information about operations in Neon.")]
     Operations {
-        #[clap(short, long)]
-        #[arg(help = String::from(r#"Action to be performed. Can be one of "list-operations" or "operation-details"."#))]
+        #[arg(short, long, help = String::from(r#"Action to be performed. Can be one of "list-operations" or "operation-details"."#))]
         action: String,
-        #[clap(short, long)]
-        #[arg(help = String::from("Project id to get operations for."))]
+        #[arg(short, long, help = String::from("Project id to get operations for."))]
         project: Option<String>,
-        #[clap(short, long)]
-        #[arg(help = String::from("Identifier for an operation to get data for."))]
+        #[arg(short, long, help = String::from("Identifier for an operation to get data for."))]
         operation: Option<String>,
-        #[clap(short, long)]
-        #[arg(default_value_t = String::from("json"))]
-        #[arg(help = String::from(r#"Format output for the keys. Can be one of "json" or "table""#))]
+        #[arg(short, long, default_value_t = String::from("json"), help = String::from(r#"Format output for the keys. Can be one of "json" or "table""#))]
         format: String,
     },
     #[clap(about = "Get information about consumption in Neon.")]
     Consumption {
-        #[clap(short, long)]
-        #[arg(help = String::from("Pagination limit for the report."))]
+        #[arg(short, long, help = String::from("Pagination limit for the report."))]
         limit: Option<u32>,
-        #[clap(short, long)]
-        #[arg(help = String::from("Cursor value used for next page in pagination."))]
+        #[arg(short, long, help = String::from("Cursor value used for next page in pagination."))]
         cursor: Option<String>,
     },
     #[clap(about = "Import data from csv file (TEXT only for now).")]
     Import {
-        #[clap(short, long)]
-        #[arg(help = String::from("The table to load data into."))]
+        #[arg(short, long, help = String::from("The table to load data into."))]
         table: String,
-        #[clap(short, long)]
-        #[arg(help = String::from("The CSV file from while to load data. Ensure you have a header row at the top."))]
+        #[arg(short, long, help = String::from("The CSV file from while to load data. Ensure you have a header row at the top."))]
         file: String,
-        #[clap(short, long)]
-        #[arg(help = String::from("Delimiter used in the row.  Default is ','."))]
+        #[arg(short, long, help = String::from("Delimiter used in the row.  Default is ','."))]
         delimiter: Option<String>,
     },
 }
@@ -274,7 +245,7 @@ async fn perform_keys_action(
             r = block_on(do_http_delete(uri, &neon_config));
         }
         _ => {
-            panic!("Unknown Keys action");
+            panic!("Unknown Keys action.  Must specify correct aciton, use --help for list.");
         }
     }
 
