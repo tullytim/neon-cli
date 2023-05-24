@@ -14,11 +14,10 @@ use postgres_openssl::MakeTlsConnector;
 use serde::Deserialize;
 use serde_json::{to_string_pretty, Value, json};
 use std::{collections::HashMap, error::Error, vec::Vec};
-use std::any::type_name;
 mod neonutils;
 mod networking;
 
-use crate::neonutils::{jsonstring_to_map, print_generic_json_table, reflective_get, json_get_first_object};
+use crate::neonutils::{print_generic_json_table, reflective_get};
 use crate::networking::{do_http_delete, do_http_get, do_http_post, do_http_post_text};
 
 #[macro_use]
@@ -46,33 +45,33 @@ enum Action {
     #[clap(about = "Get information about projects in Neon.")]
     Projects {
         #[clap(short, long)]
-        #[arg(help = String::from("Format output for the projects. Can be one of \"list-projects\", \"project-details\", \"delete-project\""))]
+        #[arg(help = String::from(r#"Format output for the projects. Can be one of "list-projects", "project-details", "delete-project""#))]
         action: String,
         #[clap(short, long)]
-        #[arg(help = String::from("The project identifier to use in the operation, if any. list-projects does not use this arg."))]
+        #[arg(help = String::from(r#"The project identifier to use in the operation, if any. list-projects does not use this arg."#))]
         project: Option<String>,
         #[clap(short, long)]
         #[arg(default_value_t = String::from("json"))]
-        #[arg(help = String::from("Format output for the projects. Can be one of \"json\" or \"table\""))]
+        #[arg(help = String::from(r#"Format output for the projects. Can be one of "json" or "table""#))]
         format: String,
     },
     #[clap(about = "Get information about keys in Neon.")]
     Keys {
         #[clap(short, long)]
-        #[arg(help = String::from("Keys action to take.  Can be one of \"list\", \"create\", or \"revoke\""))]
+        #[arg(help = String::from(r#"Keys action to take.  Can be one of "list", "create", or "revoke""#))]
         action: String,
         #[clap(short, long)]
         #[arg(help = String::from("Project the key belongs to."))]
         name: Option<String>,
         #[clap(short, long)]
         #[arg(default_value_t = String::from("json"))]
-        #[arg(help = String::from("Format output for the keys. Can be one of \"json\" or \"table\""))]
+        #[arg(help = String::from(r#"Format output for the keys. Can be one of "json" or "table""#))]
         format: String,
     },
     #[clap(about = "Get information about branches in Neon.")]
     Branch {
         #[clap(short, long)]
-        #[arg(help = String::from("Branch action to be performed. Can be one of \"list-branches\"."))]
+        #[arg(help = String::from(r#"Branch action to be performed. Can be one of "list-branches"."#))]
         action: String,
         #[clap(short, long)]
         #[arg(help = String::from("Project the branch belongs to."))]
@@ -82,7 +81,7 @@ enum Action {
         branch: Option<String>,
         #[clap(short, long)]
         #[arg(default_value_t = String::from("json"))]
-        #[arg(help = String::from("Format output for the keys. Can be one of \"json\" or \"table\""))]
+        #[arg(help = String::from(r#"Format output for the keys. Can be one of "json" or "table""#))]
         format: String,
         #[clap(short, long)]
         roles: Option<String>,
@@ -90,7 +89,7 @@ enum Action {
     #[clap(about = "Get information about endpoints in Neon.")]
     Endpoints {
         #[clap(short, long)]
-        #[arg(help = String::from("Endpoint action to be performed. Can be one of \"start\", \"suspend\", \"list\" or \"details\"."))]
+        #[arg(help = String::from(r#"Endpoint action to be performed. Can be one of "start", "suspend", "list" or "details"."#))]
         action: String,
         #[clap(short, long)]
         #[arg(help = String::from("Project the endpoint belongs to."))]
@@ -108,7 +107,7 @@ enum Action {
     #[clap(about = "Get information about operations in Neon.")]
     Operations {
         #[clap(short, long)]
-        #[arg(help = String::from("Action to be performed. Can be one of \"list-operations\" or \"operation-details\"."))]
+        #[arg(help = String::from(r#"Action to be performed. Can be one of "list-operations" or "operation-details"."#))]
         action: String,
         #[clap(short, long)]
         #[arg(help = String::from("Project id to get operations for."))]
@@ -118,7 +117,7 @@ enum Action {
         operation: Option<String>,
         #[clap(short, long)]
         #[arg(default_value_t = String::from("json"))]
-        #[arg(help = String::from("Format output for the keys. Can be one of \"json\" or \"table\""))]
+        #[arg(help = String::from(r#"Format output for the keys. Can be one of "json" or "table""#))]
         format: String,
     },
     #[clap(about = "Get information about consumption in Neon.")]
@@ -378,10 +377,6 @@ async fn perform_branches_action(
     handle_formatting_output(r, format, rows_key);
 }
 
-fn print_type_of<T>(_: &T) {
-    println!("{}", std::any::type_name::<T>())
-}
-
 #[tokio::main]
 async fn perform_endpoints_action(
     action: &String,
@@ -392,13 +387,15 @@ async fn perform_endpoints_action(
     neon_config: &NeonSession,
 ) {
     let r: Result<String, Box<dyn Error>>;
-    if action == "create" {
+    if action == "create" { // target/debug/neon-cli endpoints -a create  -p white-voice-129396 --initconfig='{"type": "read_write","pooler_mode": "transaction","branch_id": "asdf","autoscaling_limit_min_cu": 2,"autoscaling_limit_max_cu": 2}' -b br-dry-silence-599905
         let uri: String = format!("/projects/{project}/endpoints");
         if config.is_empty() {panic!("Missing or empty configuration for new endpoint.  Use the --initconfig param.")}
         let json_value: Result<Value, serde_json::Error> = serde_json::from_str(config);
-        let mut tmp = json_value.unwrap();
-        tmp["endpoint"]["branch_id"] = json!(branch);
-        r = block_on(do_http_post_text(build_uri(uri), &tmp.to_string(), &neon_config));
+        let mut final_obj = json!({
+            "endpoint": json_value.unwrap(),
+        });
+        final_obj["endpoint"]["branch_id"] = json!(branch);
+        r = block_on(do_http_post_text(build_uri(uri), &final_obj.to_string(), &neon_config));
     } else if action == "list" {
         // target/debug/neon-cli endpoints -a list -p white-voice-129396
         let uri: String = format!("/projects/{project}/endpoints");

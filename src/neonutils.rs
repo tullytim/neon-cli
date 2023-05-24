@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use chrono::Utc;
 use serde_json::Value;
 use comfy_table::*;
