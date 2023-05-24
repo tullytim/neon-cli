@@ -77,6 +77,19 @@ this,is,42
 % neon-cli import -f foo.csv -t foo
 ```
 
+# Output Format
+Most of the commands have a -f option for outputting the raw JSON from NeonDB or as a table, using "-f table" or "--format=table" or "--format=json", for example:
+```console
+% neon-cli keys -a list -f table
+╭────────────────────────┬────────┬────────────────────────┬─────────────────────┬────────────╮
+│ created_at             ┆ id     ┆ last_used_at           ┆ last_used_from_addr ┆ name       │
+╞════════════════════════╪════════╪════════════════════════╪═════════════════════╪════════════╡
+│ "2023-05-17T18:19:16Z" ┆ 382774 ┆ null                   ┆ ""                  ┆ "testkey2" │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ "2023-05-17T04:22:00Z" ┆ 380896 ┆ "2023-05-24T18:45:54Z" ┆ "98.116.56.186"     ┆ "test"     │
+╰────────────────────────┴────────┴────────────────────────┴─────────────────────┴────────────╯
+```
+
 # Configuration (.env file)
 Neon-cli uses a dotenv style setup and consumes the typical .env file you're used to.  Here is an example outlining all of the env vars neon-cli picks up.  If CONNECT_STRING exists, that will be used.  Otherwise CONNECT_STRING is built out of HOSTNAME, PORT, etc:
 ```console
