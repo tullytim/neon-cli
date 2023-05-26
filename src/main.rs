@@ -16,6 +16,7 @@ use serde_json::{to_string_pretty, Value, json};
 use std::{collections::HashMap, error::Error, vec::Vec};
 mod neonutils;
 mod networking;
+use csv::StringRecord;
 
 use crate::neonutils::{print_generic_json_table, reflective_get};
 use crate::networking::*;
@@ -444,6 +445,35 @@ fn handle_formatting_output(r: Result<String, Box<dyn Error>>, format: &String, 
     }
 }
 
+fn add_conditionally(record:&StringRecord, params:&mut Vec::<Box<dyn ToSql + Sync>>, column_types:&Vec<String>) {
+    for i in 0..record.len() {
+        let ct = &column_types[i];
+        match ct.as_str() {
+            "text" | "character varying" | "varchar" => {
+                params.push(Box::new(record[i].parse::<String>().expect("Expected string in column.")));
+            }
+            "smallint" => {
+                params.push(Box::new(record[i].parse::<i16>().expect("Excpted smallint in column.")));
+            }
+            "integer" | "int" | "int4" => {
+                params.push(Box::new(record[i].parse::<i32>().expect("Expected integer in column.")));
+            }
+            "real" | "float8" => {
+                params.push(Box::new(record[i].parse::<f64>().expect("Expected float in column.")));
+            }
+            "bigint" | "int8" => {
+                params.push(Box::new(record[i].parse::<i64>().expect("Expeted bigint in column.")));
+            }
+            "bool" | "boolean" => {
+                params.push(Box::new(record[i].parse::<bool>().expect("Expected boolean in column.")));
+            }
+            _ => {
+                panic!("Unknown column type: {ct}");
+            }
+        }
+    }
+}
+
 fn perform_import_action(
     table: &String,
     file: &String,
@@ -477,38 +507,13 @@ fn perform_import_action(
         .collect::<Vec<String>>()
         .join(",");
 
+    const batch_size:i16 = 100;
+
     let q = format!("insert into {table} values({mapped_values})");
 
     for row in records {
         let record = row.unwrap();
-        for i in 0..record.len() {
-            let ct = &column_types[i];
-
-            match ct.as_str() {
-                "text" | "character varying" | "varchar" => {
-                    params.push(Box::new(record[i].parse::<String>().expect("Expected string in column.")));
-                }
-                "smallint" => {
-                    params.push(Box::new(record[i].parse::<i16>().expect("Excpted smallint in column.")));
-                }
-                "integer" | "int" | "int4" => {
-                    params.push(Box::new(record[i].parse::<i32>().expect("Expected integer in column.")));
-                }
-                "real" | "float8" => {
-                    params.push(Box::new(record[i].parse::<f64>().expect("Expected float in column.")));
-                }
-                "bigint" | "int8" => {
-                    params.push(Box::new(record[i].parse::<i64>().expect("Expeted bigint in column.")));
-                }
-                "bool" | "boolean" => {
-                    params.push(Box::new(record[i].parse::<bool>().expect("Expected boolean in column.")));
-                }
-                _ => {
-                    panic!("Unknown column type: {ct}");
-                }
-            }
-        }
-
+        add_conditionally(&record, &mut params, &column_types);
         let param_values: Vec<&(dyn ToSql + Sync)> = params
             .iter()
             .map(|x: &Box<dyn ToSql + Sync>| &**x)
