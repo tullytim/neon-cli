@@ -9,11 +9,13 @@ use core::panic;
 use dotenv::dotenv;
 use futures::executor::block_on;
 use openssl::ssl::{SslConnector, SslMethod};
-use postgres::{types::ToSql, Client};
+use postgres::{types::ToSql, Client, Statement};
 use postgres_openssl::MakeTlsConnector;
 use serde::Deserialize;
 use serde_json::{to_string_pretty, Value, json};
 use std::{collections::HashMap, error::Error, vec::Vec};
+use std::io::{self, Write};
+
 mod neonutils;
 mod networking;
 use csv::StringRecord;
@@ -507,9 +509,14 @@ fn perform_import_action(
         .collect::<Vec<String>>()
         .join(",");
 
-    const batch_size:i16 = 100;
 
     let q = format!("insert into {table} values({mapped_values})");
+    let stmt:postgres::Statement = match client.prepare(&q) {
+        Ok(stmt) => stmt,
+        Err(e) => {
+            panic!("Preparing query failed: {:?}", e);
+        }
+    };
 
     for row in records {
         let record = row.unwrap();
@@ -518,7 +525,9 @@ fn perform_import_action(
             .iter()
             .map(|x: &Box<dyn ToSql + Sync>| &**x)
             .collect::<Vec<_>>();
-        client.execute(&q, &param_values).expect("Couldn't insert");
+        client.execute(&stmt, &param_values).expect("Couldn't execute prepared stmt.");
+        print!("."); io::stdout().flush().unwrap();
+
         params.clear();
     }
     Ok(())
