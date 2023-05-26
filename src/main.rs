@@ -486,28 +486,22 @@ fn perform_import_action(
 
             match ct.as_str() {
                 "text" | "character varying" | "varchar" => {
-                    let v = record[i].parse::<String>().unwrap();
-                    params.push(Box::new(v));
+                    params.push(Box::new(record[i].parse::<String>().expect("Expected string in column.")));
                 }
                 "smallint" => {
-                    let v = record[i].parse::<i16>().unwrap();
-                    params.push(Box::new(v));
+                    params.push(Box::new(record[i].parse::<i16>().expect("Excpted smallint in column.")));
                 }
                 "integer" | "int" | "int4" => {
-                    let v = record[i].parse::<i32>().unwrap();
-                    params.push(Box::new(v));
+                    params.push(Box::new(record[i].parse::<i32>().expect("Expected integer in column.")));
                 }
                 "real" | "float8" => {
-                    let v = record[i].parse::<f64>().unwrap();
-                    params.push(Box::new(v));
+                    params.push(Box::new(record[i].parse::<f64>().expect("Expected float in column.")));
                 }
                 "bigint" | "int8" => {
-                    let v = record[i].parse::<i64>().unwrap();
-                    params.push(Box::new(v));
+                    params.push(Box::new(record[i].parse::<i64>().expect("Expeted bigint in column.")));
                 }
                 "bool" | "boolean" => {
-                    let v = record[i].parse::<bool>().unwrap();
-                    params.push(Box::new(v));
+                    params.push(Box::new(record[i].parse::<bool>().expect("Expected boolean in column.")));
                 }
                 _ => {
                     panic!("Unknown column type: {ct}");
@@ -566,8 +560,6 @@ fn main() {
             let r: String = roles.unwrap_or("".to_string());
             perform_branches_action(&action, &p, &b, &format, &r, &config);
         }
-
-        
         Action::Endpoints {
             action,
             project,
