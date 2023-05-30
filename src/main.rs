@@ -14,8 +14,6 @@ use postgres_openssl::MakeTlsConnector;
 use serde::Deserialize;
 use serde_json::{to_string_pretty, Value, json};
 use std::{collections::HashMap, error::Error, vec::Vec};
-use std::io::{self, Write};
-
 mod neonutils;
 mod networking;
 use csv::StringRecord;
@@ -526,8 +524,7 @@ fn perform_import_action(
             .map(|x: &Box<dyn ToSql + Sync>| &**x)
             .collect::<Vec<_>>();
         client.execute(&stmt, &param_values).expect("Couldn't execute prepared stmt.");
-        print!("."); io::stdout().flush().unwrap();
-
+        print!("."); 
         params.clear();
     }
     Ok(())
