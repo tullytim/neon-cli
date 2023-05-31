@@ -9,10 +9,10 @@ use core::panic;
 use dotenv::dotenv;
 use futures::executor::block_on;
 use openssl::ssl::{SslConnector, SslMethod};
-use postgres::{types::ToSql, Client, Statement};
+use postgres::{types::ToSql, Client};
 use postgres_openssl::MakeTlsConnector;
 use serde::Deserialize;
-use serde_json::{to_string_pretty, Value, json};
+use serde_json::{json, to_string_pretty, Value};
 use std::{collections::HashMap, error::Error, vec::Vec};
 mod neonutils;
 mod networking;
@@ -359,15 +359,22 @@ async fn perform_endpoints_action(
     neon_config: &NeonSession,
 ) {
     let r: Result<String, Box<dyn Error>>;
-    if action == "create" { // target/debug/neon-cli endpoints -a create  -p white-voice-129396 --initconfig='{"type": "read_write","pooler_mode": "transaction","branch_id": "asdf","autoscaling_limit_min_cu": 2,"autoscaling_limit_max_cu": 2}' -b br-dry-silence-599905
+    if action == "create" {
+        // target/debug/neon-cli endpoints -a create  -p white-voice-129396 --initconfig='{"type": "read_write","pooler_mode": "transaction","branch_id": "asdf","autoscaling_limit_min_cu": 2,"autoscaling_limit_max_cu": 2}' -b br-dry-silence-599905
         let uri: String = format!("/projects/{project}/endpoints");
-        if config.is_empty() {panic!("Missing or empty configuration for new endpoint.  Use the --initconfig param.")}
+        if config.is_empty() {
+            panic!("Missing or empty configuration for new endpoint.  Use the --initconfig param.")
+        }
         let json_value: Result<Value, serde_json::Error> = serde_json::from_str(config);
         let mut final_obj = json!({
             "endpoint": json_value.unwrap(),
         });
         final_obj["endpoint"]["branch_id"] = json!(branch);
-        r = block_on(do_http_post_text(build_uri(uri), &final_obj.to_string(), &neon_config));
+        r = block_on(do_http_post_text(
+            build_uri(uri),
+            &final_obj.to_string(),
+            &neon_config,
+        ));
     } else if action == "list" {
         // target/debug/neon-cli endpoints -a list -p white-voice-129396
         let uri: String = format!("/projects/{project}/endpoints");
@@ -445,27 +452,52 @@ fn handle_formatting_output(r: Result<String, Box<dyn Error>>, format: &String, 
     }
 }
 
-fn add_conditionally(record:&StringRecord, params:&mut Vec::<Box<dyn ToSql + Sync>>, column_types:&Vec<String>) {
+#[inline(always)]
+fn add_conditionally(
+    record: &StringRecord,
+    params: &mut Vec<Box<dyn ToSql + Sync>>,
+    column_types: &Vec<String>,
+) {
     for i in 0..record.len() {
         let ct = &column_types[i];
         match ct.as_str() {
             "text" | "character varying" | "varchar" => {
-                params.push(Box::new(record[i].parse::<String>().expect("Expected string in column.")));
+                params.push(Box::new(
+                    record[i]
+                        .parse::<String>()
+                        .expect("Expected string in column."),
+                ));
             }
             "smallint" => {
-                params.push(Box::new(record[i].parse::<i16>().expect("Excpted smallint in column.")));
+                params.push(Box::new(
+                    record[i]
+                        .parse::<i16>()
+                        .expect("Excpted smallint in column."),
+                ));
             }
             "integer" | "int" | "int4" => {
-                params.push(Box::new(record[i].parse::<i32>().expect("Expected integer in column.")));
+                params.push(Box::new(
+                    record[i]
+                        .parse::<i32>()
+                        .expect("Expected integer in column."),
+                ));
             }
             "real" | "float8" => {
-                params.push(Box::new(record[i].parse::<f64>().expect("Expected float in column.")));
+                params.push(Box::new(
+                    record[i].parse::<f64>().expect("Expected float in column."),
+                ));
             }
             "bigint" | "int8" => {
-                params.push(Box::new(record[i].parse::<i64>().expect("Expeted bigint in column.")));
+                params.push(Box::new(
+                    record[i].parse::<i64>().expect("Expeted bigint in column."),
+                ));
             }
             "bool" | "boolean" => {
-                params.push(Box::new(record[i].parse::<bool>().expect("Expected boolean in column.")));
+                params.push(Box::new(
+                    record[i]
+                        .parse::<bool>()
+                        .expect("Expected boolean in column."),
+                ));
             }
             _ => {
                 panic!("Unknown column type: {ct}");
@@ -500,33 +532,43 @@ fn perform_import_action(
         .from_path(file);
     let mut binding = rdr.unwrap();
     let records = binding.records();
+
     let mut params = Vec::<Box<dyn ToSql + Sync>>::new();
-    let range = 1..=column_types.len(); // Create a range from start to end (inclusive)
-    let mapped_values: String = range
-        .map(|i| format!("${i}"))
+    let num_cols: u16 = column_types.len() as u16;
+
+    #[inline(always)]
+    fn format_row_params(num_params: u32, row_num: u32) -> String {
+        let range = 1..=num_params; // Create a range from start to end (inclusive)
+        let mapped_values: String = range
+            .map(|i| format!("${}", i + row_num * num_params))
+            .collect::<Vec<String>>()
+            .join(",");
+        return format!("({mapped_values})");
+    }
+
+    // Build the parameterized portion of the insert statement separately
+    let vv = records
+        .enumerate()
+        .map(|(index, row)| {
+            let record = row.unwrap();
+            add_conditionally(&record, &mut params, &column_types);
+            format_row_params(num_cols as u32, index as u32)
+        })
         .collect::<Vec<String>>()
         .join(",");
 
+    // Rebuild the params from heap values
+    let param_values: Vec<&(dyn ToSql + Sync)> = params
+        .iter()
+        .map(|x: &Box<dyn ToSql + Sync>| &**x)
+        .collect::<Vec<_>>();
 
-    let q = format!("insert into {table} values({mapped_values})");
-    let stmt:postgres::Statement = match client.prepare(&q) {
-        Ok(stmt) => stmt,
-        Err(e) => {
-            panic!("Preparing query failed: {:?}", e);
-        }
-    };
+    let final_stmt = format!("INSERT INTO {table} VALUES {vv}");
 
-    for row in records {
-        let record = row.unwrap();
-        add_conditionally(&record, &mut params, &column_types);
-        let param_values: Vec<&(dyn ToSql + Sync)> = params
-            .iter()
-            .map(|x: &Box<dyn ToSql + Sync>| &**x)
-            .collect::<Vec<_>>();
-        client.execute(&stmt, &param_values).expect("Couldn't execute prepared stmt.");
-        print!("."); 
-        params.clear();
-    }
+    client
+        .execute(final_stmt.as_str(), &param_values)
+        .expect("Couldn't execute prepared stmt.");
+
     Ok(())
 }
 
@@ -576,7 +618,7 @@ fn main() {
             project,
             branch,
             endpoint,
-            initconfig
+            initconfig,
         } => {
             let p = project.unwrap_or("".to_string());
             let b: String = branch.unwrap_or("".to_string());
